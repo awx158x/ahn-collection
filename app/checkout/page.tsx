@@ -5,11 +5,6 @@ import Link from "next/link";
 import { useSearchParams } from "next/navigation";
 import { supabase } from "../../lib/supabase";
 
-// ==================================================
-// PAYMENT DETAILS
-// REPLACE THESE WITH YOUR REAL DETAILS
-// ==================================================
-
 const JAZZCASH_NUMBER =
   "0300 8661317";
 
@@ -17,15 +12,13 @@ const BANK_NAME =
   "N/A";
 
 const BANK_ACCOUNT_TITLE =
-  "N/A";
+  "AHN COLLECTION";
 
 const BANK_ACCOUNT_NUMBER =
   "N/A";
 
 const BANK_IBAN =
   "N/A";
-
-// ==================================================
 
 type PaymentMethod =
   | "COD"
@@ -35,15 +28,12 @@ type PaymentMethod =
 type Product = {
   id: string;
   name: string;
-  description: string | null;
   price: number;
+  original_price: number | null;
   category_id: string | null;
-  section: string | null;
   images: string[] | null;
   reel_url: string | null;
   sizes: string[] | null;
-  stock: number;
-  featured: boolean;
   active: boolean;
 };
 
@@ -79,11 +69,11 @@ function CheckoutContent() {
   const [placingOrder, setPlacingOrder] =
     useState(false);
 
-  const [error, setError] =
-    useState("");
-
   const [success, setSuccess] =
     useState(false);
+
+  const [error, setError] =
+    useState("");
 
   const [payment, setPayment] =
     useState<PaymentMethod>("COD");
@@ -99,15 +89,8 @@ function CheckoutContent() {
       color: "",
     });
 
-  // ==================================================
-  // LOAD PRODUCT
-  // ==================================================
-
   useEffect(() => {
     async function loadProduct() {
-      setLoading(true);
-      setError("");
-
       if (!productId) {
         setError(
           "No product was selected."
@@ -122,48 +105,44 @@ function CheckoutContent() {
       } = await supabase
         .from("products")
         .select(
-          "id, name, description, price, category_id, section, images, reel_url, sizes, stock, featured, active"
+          "id, name, price, original_price, category_id, images, reel_url, sizes, active"
         )
         .eq("id", productId)
         .eq("active", true)
         .single();
 
-      if (productError || !data) {
-        console.error(
-          "Checkout product error:",
-          productError
-        );
-
+      if (
+        productError ||
+        !data
+      ) {
         setError(
           productError?.message ||
-            "Product could not be found."
+            "Product not found."
         );
-
         setLoading(false);
         return;
       }
 
-      const loadedProduct =
-        data as Product;
-
       setProduct(
-        loadedProduct
+        data as Product
       );
 
       if (
         !urlSize &&
-        loadedProduct.sizes &&
-        loadedProduct.sizes.length > 0
+        data.sizes &&
+        data.sizes.length > 0
       ) {
-        setForm((current) => ({
-          ...current,
-          size:
-            loadedProduct.sizes?.[0] ||
-            "",
-        }));
+        setForm(
+          (current) => ({
+            ...current,
+            size:
+              data.sizes?.[0] ||
+              "",
+          })
+        );
       }
 
-      if (loadedProduct.category_id) {
+      if (data.category_id) {
         const {
           data: category,
         } = await supabase
@@ -173,7 +152,7 @@ function CheckoutContent() {
           )
           .eq(
             "id",
-            loadedProduct.category_id
+            data.category_id
           )
           .single();
 
@@ -190,87 +169,63 @@ function CheckoutContent() {
     loadProduct();
   }, [productId, urlSize]);
 
-  // ==================================================
-  // FIELD UPDATE
-  // ==================================================
-
   function updateField(
     field: keyof FormState,
     value: string
   ) {
-    setForm((current) => ({
-      ...current,
-      [field]: value,
-    }));
+    setForm(
+      (current) => ({
+        ...current,
+        [field]: value,
+      })
+    );
   }
-
-  // ==================================================
-  // PLACE ORDER
-  // ==================================================
 
   async function placeOrder(
     event: React.FormEvent<HTMLFormElement>
   ) {
     event.preventDefault();
 
+    if (!product) return;
+
     setError("");
-
-    if (!product) {
-      setError(
-        "Product information is missing."
-      );
-      return;
-    }
-
-    if (product.stock <= 0) {
-      setError(
-        "Sorry, this product is out of stock."
-      );
-      return;
-    }
-
-    if (
-      product.sizes &&
-      product.sizes.length > 0 &&
-      !form.size
-    ) {
-      setError(
-        "Please select a size."
-      );
-      return;
-    }
-
-    if (!form.name.trim()) {
-      setError(
-        "Please enter your full name."
-      );
-      return;
-    }
-
-    if (!form.phone.trim()) {
-      setError(
-        "Please enter your phone number."
-      );
-      return;
-    }
-
-    if (!form.city.trim()) {
-      setError(
-        "Please enter your city."
-      );
-      return;
-    }
-
-    if (!form.address.trim()) {
-      setError(
-        "Please enter your complete address."
-      );
-      return;
-    }
-
     setPlacingOrder(true);
 
     try {
+      if (
+        product.sizes &&
+        product.sizes.length > 0 &&
+        !form.size
+      ) {
+        throw new Error(
+          "Please select a size."
+        );
+      }
+
+      if (!form.name.trim()) {
+        throw new Error(
+          "Please enter your full name."
+        );
+      }
+
+      if (!form.phone.trim()) {
+        throw new Error(
+          "Please enter your phone number."
+        );
+      }
+
+      if (!form.city.trim()) {
+        throw new Error(
+          "Please enter your city."
+        );
+      }
+
+      if (!form.address.trim()) {
+        throw new Error(
+          "Please enter your complete address."
+        );
+      }
+
       const {
         data,
         error: rpcError,
@@ -310,16 +265,11 @@ function CheckoutContent() {
             payment,
 
           p_amount:
-            Number(product.price),
+            product.price,
         }
       );
 
       if (rpcError) {
-        console.error(
-          "ORDER RPC ERROR:",
-          rpcError
-        );
-
         throw new Error(
           rpcError.message
         );
@@ -327,72 +277,62 @@ function CheckoutContent() {
 
       if (!data?.success) {
         throw new Error(
-          "The order could not be created."
+          "Could not create your order."
         );
       }
 
       setSuccess(true);
 
     } catch (err) {
-      console.error(
-        "FINAL ORDER ERROR:",
-        err
-      );
-
       setError(
         err instanceof Error
           ? err.message
-          : "Something went wrong while placing the order."
+          : "Something went wrong."
       );
     } finally {
       setPlacingOrder(false);
     }
   }
 
-  // ==================================================
-  // SUCCESS
-  // ==================================================
-
   if (success && product) {
     return (
-      <main className="flex min-h-screen items-center justify-center bg-[#fcfaf6] px-6">
+      <main className="flex min-h-screen items-center justify-center bg-white px-6">
 
-        <div className="w-full max-w-xl border border-[#c9a96e]/40 bg-[#fffdf9] px-8 py-16 text-center shadow-sm">
+        <div className="w-full max-w-xl border border-[#e5e3de] p-10 text-center">
 
-          <p className="font-[var(--font-cinzel)] text-xs tracking-[0.4em] text-[#b28a45]">
+          <p className="ahn-label text-[#a88952]">
             AHN COLLECTION
           </p>
 
-          <div className="mx-auto mt-6 flex h-16 w-16 items-center justify-center rounded-full border border-[#c9a96e] text-2xl text-[#b28a45]">
+          <div className="mx-auto mt-7 flex h-14 w-14 items-center justify-center rounded-full border border-[#181818] text-xl">
             ✓
           </div>
 
-          <h1 className="mt-8 font-[var(--font-cormorant)] text-5xl">
+          <h1 className="mt-7 text-5xl font-medium">
             Order Received
           </h1>
 
-          <div className="mx-auto mt-6 h-px w-16 bg-[#c9a96e]" />
-
-          <p className="mx-auto mt-6 max-w-md font-[var(--font-cormorant)] text-xl leading-8 text-[#756c60]">
+          <p className="mt-5 leading-7 text-[#666]">
             Thank you, {form.name}.
             <br />
             Your order for{" "}
-            <span className="text-[#b28a45]">
+            <strong>
               {product.name}
-            </span>{" "}
+            </strong>{" "}
             has been received.
           </p>
 
-          <p className="mt-6 font-[var(--font-cinzel)] text-xs tracking-widest text-[#8c7044]">
+          <p className="mt-5 text-xs font-semibold tracking-[0.15em] text-[#777]">
             PAYMENT:{" "}
             {payment === "COD"
               ? "CASH ON DELIVERY"
-              : payment === "JAZZCASH"
+              : payment ===
+                "JAZZCASH"
               ? "JAZZCASH"
               : "BANK TRANSFER"}
           </p>
 
-          <p className="mt-3 font-[var(--font-cormorant)] text-lg text-[#81786a]">
+          <p className="mt-3 text-lg text-[#181818]">
             Total: Rs.{" "}
             {product.price.toLocaleString(
               "en-PK"
@@ -401,54 +341,7 @@ function CheckoutContent() {
 
           <Link
             href="/"
-            className="mt-10 inline-block bg-[#b28a45] px-10 py-4 font-[var(--font-cinzel)] text-xs tracking-[0.2em] text-white transition hover:bg-[#967238]"
-          >
-            RETURN TO AHN COLLECTION
-          </Link>
-
-        </div>
-
-      </main>
-    );
-  }
-
-  // ==================================================
-  // LOADING
-  // ==================================================
-
-  if (loading) {
-    return (
-      <main className="flex min-h-screen items-center justify-center bg-[#fcfaf6]">
-
-        <p className="font-[var(--font-cormorant)] text-3xl">
-          Preparing checkout...
-        </p>
-
-      </main>
-    );
-  }
-
-  // ==================================================
-  // PRODUCT NOT FOUND
-  // ==================================================
-
-  if (!product) {
-    return (
-      <main className="flex min-h-screen items-center justify-center bg-[#fcfaf6] px-6">
-
-        <div className="max-w-xl text-center">
-
-          <h1 className="font-[var(--font-cormorant)] text-5xl">
-            Checkout unavailable
-          </h1>
-
-          <p className="mt-5 text-lg text-[#81786a]">
-            {error}
-          </p>
-
-          <Link
-            href="/"
-            className="mt-8 inline-block bg-[#b28a45] px-8 py-4 text-xs tracking-[0.2em] text-white"
+            className="mt-9 inline-block bg-[#181818] px-8 py-4 text-xs font-semibold tracking-[0.15em] text-white"
           >
             RETURN TO COLLECTION
           </Link>
@@ -459,64 +352,72 @@ function CheckoutContent() {
     );
   }
 
-  const productImage =
-    product.images?.[0] || "";
+  if (loading) {
+    return (
+      <main className="flex min-h-screen items-center justify-center bg-white">
+        <p className="text-[#777]">
+          Preparing checkout...
+        </p>
+      </main>
+    );
+  }
 
-  const sizes =
-    product.sizes || [];
+  if (!product) {
+    return (
+      <main className="flex min-h-screen items-center justify-center bg-white px-6">
+        <div className="text-center">
+          <h1 className="text-4xl">
+            Checkout unavailable
+          </h1>
 
-  const outOfStock =
-    product.stock <= 0;
-
-  return (
-    <main className="min-h-screen bg-[#fcfaf6] text-[#30291f]">
-
-      {/* HEADER */}
-
-      <header className="border-b border-[#c9a96e]/30 bg-[#fffdf9]">
-
-        <div className="mx-auto flex h-24 max-w-6xl items-center justify-between px-6">
+          <p className="mt-4 text-[#777]">
+            {error}
+          </p>
 
           <Link
             href="/"
-            className="text-center"
+            className="mt-7 inline-block bg-[#181818] px-7 py-4 text-xs font-semibold text-white"
           >
+            RETURN HOME
+          </Link>
+        </div>
+      </main>
+    );
+  }
 
-            <h1 className="font-[var(--font-cinzel)] text-3xl tracking-[0.25em] text-[#b28a45]">
-              AHN
-            </h1>
+  return (
+    <main className="min-h-screen bg-white text-[#181818]">
 
-            <div className="mx-auto mt-1 h-px w-12 bg-[#c9a96e]" />
+      <header className="border-b border-[#e5e3de]">
 
-            <p className="mt-1 font-[var(--font-cinzel)] text-[8px] tracking-[0.45em] text-[#75664e]">
-              COLLECTION
-            </p>
+        <div className="mx-auto flex h-20 max-w-6xl items-center justify-between px-6">
 
+          <Link
+            href="/"
+            className="text-sm font-semibold tracking-[0.15em]"
+          >
+            AHN COLLECTION
           </Link>
 
-          <p className="font-[var(--font-cinzel)] text-xs tracking-[0.25em] text-[#8c7044]">
+          <span className="text-xs font-semibold tracking-[0.15em] text-[#777]">
             CHECKOUT
-          </p>
+          </span>
 
         </div>
 
       </header>
 
-      {/* CHECKOUT */}
-
       <section className="mx-auto max-w-5xl px-6 py-14">
 
         <div className="mb-12 text-center">
 
-          <p className="font-[var(--font-cinzel)] text-xs tracking-[0.4em] text-[#b28a45]">
+          <p className="ahn-label text-[#a88952]">
             COMPLETE YOUR ORDER
           </p>
 
-          <h1 className="mt-4 font-[var(--font-cormorant)] text-6xl">
+          <h1 className="mt-4 text-6xl font-medium">
             Checkout
           </h1>
-
-          <div className="mx-auto mt-5 h-px w-16 bg-[#c9a96e]" />
 
         </div>
 
@@ -526,140 +427,135 @@ function CheckoutContent() {
           </div>
         )}
 
-        <form
-          onSubmit={placeOrder}
-        >
+        <form onSubmit={placeOrder}>
 
           <div className="grid gap-10 lg:grid-cols-2">
 
             {/* CUSTOMER */}
 
-            <div className="border border-[#c9a96e]/30 bg-[#fffdf9] p-7">
+            <div className="border border-[#e5e3de] bg-white p-7">
 
-              <h2 className="font-[var(--font-cormorant)] text-3xl">
+              <h2 className="text-3xl font-medium">
                 Customer Details
               </h2>
 
               <div className="mt-7 space-y-5">
 
-                <div>
-                  <label className="label">
-                    FULL NAME
-                  </label>
+                {[
+                  [
+                    "name",
+                    "FULL NAME",
+                    "text",
+                    "Your full name",
+                  ],
+                  [
+                    "phone",
+                    "PHONE NUMBER",
+                    "tel",
+                    "03XX XXXXXXX",
+                  ],
+                  [
+                    "whatsapp",
+                    "WHATSAPP NUMBER",
+                    "tel",
+                    "03XX XXXXXXX",
+                  ],
+                  [
+                    "city",
+                    "CITY",
+                    "text",
+                    "Your city",
+                  ],
+                ].map(
+                  (item) => (
+                    <div key={item[0]}>
 
-                  <input
-                    required
-                    value={form.name}
-                    onChange={(e) =>
-                      updateField(
-                        "name",
-                        e.target.value
-                      )
-                    }
-                    placeholder="Your full name"
-                    className="input"
-                  />
-                </div>
+                      <label className="mb-2 block text-[10px] font-semibold tracking-[0.15em] text-[#666]">
+                        {item[1]}
+                      </label>
 
-                <div>
-                  <label className="label">
-                    PHONE NUMBER
-                  </label>
+                      <input
+                        required={
+                          item[0] !==
+                          "whatsapp"
+                        }
+                        type={item[2]}
+                        value={
+                          form[
+                            item[0] as keyof FormState
+                          ]
+                        }
+                        onChange={(event) =>
+                          updateField(
+                            item[0] as keyof FormState,
+                            event.target.value
+                          )
+                        }
+                        placeholder={
+                          item[3]
+                        }
+                        className="ahn-input"
+                      />
 
-                  <input
-                    required
-                    type="tel"
-                    value={form.phone}
-                    onChange={(e) =>
-                      updateField(
-                        "phone",
-                        e.target.value
-                      )
-                    }
-                    placeholder="03XX XXXXXXX"
-                    className="input"
-                  />
-                </div>
-
-                <div>
-                  <label className="label">
-                    WHATSAPP NUMBER
-                  </label>
-
-                  <input
-                    type="tel"
-                    value={form.whatsapp}
-                    onChange={(e) =>
-                      updateField(
-                        "whatsapp",
-                        e.target.value
-                      )
-                    }
-                    placeholder="03XX XXXXXXX"
-                    className="input"
-                  />
-                </div>
-
-                <div>
-                  <label className="label">
-                    CITY
-                  </label>
-
-                  <input
-                    required
-                    value={form.city}
-                    onChange={(e) =>
-                      updateField(
-                        "city",
-                        e.target.value
-                      )
-                    }
-                    placeholder="Your city"
-                    className="input"
-                  />
-                </div>
+                    </div>
+                  )
+                )}
 
                 <div>
-                  <label className="label">
+
+                  <label className="mb-2 block text-[10px] font-semibold tracking-[0.15em] text-[#666]">
                     COMPLETE DELIVERY ADDRESS
                   </label>
 
                   <textarea
                     required
-                    value={form.address}
-                    onChange={(e) =>
+                    rows={5}
+                    value={
+                      form.address
+                    }
+                    onChange={(event) =>
                       updateField(
                         "address",
-                        e.target.value
+                        event.target.value
                       )
                     }
                     placeholder="House number, street, area..."
-                    rows={4}
-                    className="input resize-none"
+                    className="ahn-input resize-none"
                   />
+
                 </div>
 
               </div>
 
             </div>
 
-            {/* ORDER SIDE */}
+            {/* ORDER */}
 
             <div>
 
-              {/* PRODUCT */}
+              <div className="border border-[#e5e3de] p-7">
 
-              <div className="border border-[#c9a96e]/30 bg-[#fffdf9] p-7">
-
-                <h2 className="font-[var(--font-cormorant)] text-3xl">
+                <h2 className="text-3xl font-medium">
                   Your Article
                 </h2>
 
-                <div className="mt-6 flex gap-5 border-t border-[#c9a96e]/20 pt-6">
+                <div className="mt-6 flex gap-5 border-t border-[#e5e3de] pt-6">
 
-                  <div className="h-32 w-24 overflow-hidden bg-[#eee9df]">
+                  <div className="h-32 w-24 overflow-hidden bg-[#f5f5f3]">
 
-                    {product.reel_url ? (
+                    {product.images?.[0] ? (
+
+                      <img
+                        src={
+                          product.images[0]
+                        }
+                        alt={
+                          product.name
+                        }
+                        className="h-full w-full object-cover"
+                      />
+
+                    ) : product.reel_url ? (
 
                       <video
                         src={
@@ -670,50 +566,53 @@ function CheckoutContent() {
                         className="h-full w-full object-cover"
                       />
 
-                    ) : productImage ? (
-
-                      <img
-                        src={
-                          productImage
-                        }
-                        alt={
-                          product.name
-                        }
-                        className="h-full w-full object-cover"
-                      />
-
                     ) : null}
 
                   </div>
 
                   <div>
 
-                    <p className="font-[var(--font-cinzel)] text-[10px] tracking-widest text-[#b28a45]">
+                    <p className="ahn-label text-[#a88952]">
                       {categoryName}
                     </p>
 
-                    <h3 className="mt-2 font-[var(--font-cormorant)] text-2xl">
+                    <h3 className="mt-2 text-xl font-medium">
                       {product.name}
                     </h3>
 
-                    <p className="mt-2 font-[var(--font-cormorant)] text-xl text-[#b28a45]">
-                      Rs.{" "}
-                      {product.price.toLocaleString(
-                        "en-PK"
-                      )}
-                    </p>
+                    <div className="mt-2 flex flex-wrap gap-3">
+
+                      <span className="text-lg text-[#ff4f1f]">
+                        Rs.{" "}
+                        {product.price.toLocaleString(
+                          "en-PK"
+                        )}
+                      </span>
+
+                      {product.original_price &&
+                        product.original_price >
+                          product.price && (
+                          <span className="text-sm text-[#999] line-through">
+                            Rs.{" "}
+                            {product.original_price.toLocaleString(
+                              "en-PK"
+                            )}
+                          </span>
+                        )}
+
+                    </div>
 
                   </div>
 
                 </div>
 
-                {/* SIZE */}
-
-                {sizes.length > 0 && (
+                {product.sizes &&
+                  product.sizes.length >
+                    0 && (
 
                   <div className="mt-7">
 
-                    <label className="label">
+                    <label className="mb-2 block text-[10px] font-semibold tracking-[0.15em] text-[#666]">
                       SIZE
                     </label>
 
@@ -722,20 +621,20 @@ function CheckoutContent() {
                       value={
                         form.size
                       }
-                      onChange={(e) =>
+                      onChange={(event) =>
                         updateField(
                           "size",
-                          e.target.value
+                          event.target.value
                         )
                       }
-                      className="input"
+                      className="ahn-input"
                     >
 
                       <option value="">
                         Select size
                       </option>
 
-                      {sizes.map(
+                      {product.sizes.map(
                         (size) => (
                           <option
                             key={size}
@@ -749,40 +648,25 @@ function CheckoutContent() {
                     </select>
 
                   </div>
-
                 )}
-
-                {/* COLOR */}
 
                 <div className="mt-5">
 
-                  <label className="label">
+                  <label className="mb-2 block text-[10px] font-semibold tracking-[0.15em] text-[#666]">
                     COLOR
                   </label>
 
                   <input
                     value={form.color}
-                    onChange={(e) =>
+                    onChange={(event) =>
                       updateField(
                         "color",
-                        e.target.value
+                        event.target.value
                       )
                     }
-                    className="input"
                     placeholder="e.g. Ivory, White, Black"
+                    className="ahn-input"
                   />
-
-                </div>
-
-                <div className="mt-5 border border-[#eee5d8] bg-[#fcfaf6] p-4 text-sm">
-
-                  <p className="text-[#81786a]">
-                    Stock available
-                  </p>
-
-                  <p className="mt-1 font-medium">
-                    {product.stock}
-                  </p>
 
                 </div>
 
@@ -790,216 +674,161 @@ function CheckoutContent() {
 
               {/* PAYMENT */}
 
-              <div className="mt-6 border border-[#c9a96e]/30 bg-[#fffdf9] p-7">
+              <div className="mt-6 border border-[#e5e3de] p-7">
 
-                <h2 className="font-[var(--font-cormorant)] text-3xl">
+                <h2 className="text-3xl font-medium">
                   Payment Method
                 </h2>
 
                 <div className="mt-6 space-y-3">
 
-                  {/* COD */}
+                  {[
+                    [
+                      "COD",
+                      "CASH ON DELIVERY",
+                      "Pay when your order arrives.",
+                    ],
+                    [
+                      "JAZZCASH",
+                      "JAZZCASH",
+                      "Pay through JazzCash.",
+                    ],
+                    [
+                      "BANK",
+                      "BANK TRANSFER",
+                      "Transfer directly to our bank account.",
+                    ],
+                  ].map(
+                    (item) => (
 
-                  <button
-                    type="button"
-                    onClick={() =>
-                      setPayment(
-                        "COD"
-                      )
-                    }
-                    className={`w-full border p-5 text-left transition ${
-                      payment ===
-                      "COD"
-                        ? "border-[#b28a45] bg-[#b28a45]/5"
-                        : "border-[#c9a96e]/30"
-                    }`}
-                  >
+                      <button
+                        key={item[0]}
+                        type="button"
+                        onClick={() =>
+                          setPayment(
+                            item[0] as PaymentMethod
+                          )
+                        }
+                        className={`w-full border p-5 text-left ${
+                          payment ===
+                          item[0]
+                            ? "border-[#181818] bg-[#fafafa]"
+                            : "border-[#e5e3de]"
+                        }`}
+                      >
 
-                    <p className="font-[var(--font-cinzel)] text-xs tracking-widest">
-                      CASH ON DELIVERY
-                    </p>
+                        <p className="text-xs font-semibold tracking-[0.12em]">
+                          {item[1]}
+                        </p>
 
-                    <p className="mt-1 text-sm text-[#81786a]">
-                      Pay when your order arrives.
-                    </p>
+                        <p className="mt-2 text-sm text-[#777]">
+                          {item[2]}
+                        </p>
 
-                  </button>
+                      </button>
 
-                  {/* JAZZCASH */}
-
-                  <button
-                    type="button"
-                    onClick={() =>
-                      setPayment(
-                        "JAZZCASH"
-                      )
-                    }
-                    className={`w-full border p-5 text-left transition ${
-                      payment ===
-                      "JAZZCASH"
-                        ? "border-[#b28a45] bg-[#b28a45]/5"
-                        : "border-[#c9a96e]/30"
-                    }`}
-                  >
-
-                    <p className="font-[var(--font-cinzel)] text-xs tracking-widest">
-                      JAZZCASH
-                    </p>
-
-                    <p className="mt-1 text-sm text-[#81786a]">
-                      Pay through JazzCash.
-                    </p>
-
-                  </button>
-
-                  {/* BANK */}
-
-                  <button
-                    type="button"
-                    onClick={() =>
-                      setPayment(
-                        "BANK"
-                      )
-                    }
-                    className={`w-full border p-5 text-left transition ${
-                      payment ===
-                      "BANK"
-                        ? "border-[#b28a45] bg-[#b28a45]/5"
-                        : "border-[#c9a96e]/30"
-                    }`}
-                  >
-
-                    <p className="font-[var(--font-cinzel)] text-xs tracking-widest">
-                      BANK TRANSFER
-                    </p>
-
-                    <p className="mt-1 text-sm text-[#81786a]">
-                      Transfer directly to our bank account.
-                    </p>
-
-                  </button>
+                    )
+                  )}
 
                 </div>
 
-                {/* ==================================================
-                    JAZZCASH DETAILS
-                ================================================== */}
+                {/* JAZZCASH */}
 
                 {payment ===
                   "JAZZCASH" && (
 
-                  <div className="mt-5 border border-[#c9a96e]/30 bg-[#fcfaf6] p-5">
+                  <div className="mt-5 border border-[#e5e3de] bg-[#fafaf8] p-5">
 
-                    <p className="font-[var(--font-cinzel)] text-xs tracking-widest text-[#b28a45]">
+                    <p className="ahn-label text-[#a88952]">
                       JAZZCASH PAYMENT DETAILS
                     </p>
 
-                    <div className="mt-4">
+                    <p className="mt-3 text-xl font-medium">
+                      {JAZZCASH_NUMBER}
+                    </p>
 
-                      <p className="text-xs uppercase tracking-wider text-[#81786a]">
-                        JAZZCASH NUMBER
-                      </p>
-
-                      <p className="mt-1 font-[var(--font-cormorant)] text-2xl">
-                        {JAZZCASH_NUMBER}
-                      </p>
-
-                    </div>
-
-                    <div className="mt-5 border-t border-[#e5dccd] pt-4">
-
-                      <p className="font-[var(--font-cormorant)] text-base leading-7 text-[#756c60]">
-                        After making the payment, please keep your transaction screenshot.
-                        <br />
-                        <strong className="text-[#30291f]">
-                          When you are contacted by us, you have to send the screenshot of the cash transfer.
-                        </strong>
-                      </p>
-
-                    </div>
+                    <p className="mt-5 border-t border-[#e5e3de] pt-4 text-sm leading-6 text-[#666]">
+                      After making the payment,
+                      please keep your transaction
+                      screenshot.
+                      <br />
+                      <strong className="text-[#181818]">
+                        When you are contacted by us,
+                        you have to send the screenshot
+                        of the cash transfer.
+                      </strong>
+                    </p>
 
                   </div>
 
                 )}
 
-                {/* ==================================================
-                    BANK DETAILS
-                ================================================== */}
+                {/* BANK */}
 
                 {payment ===
                   "BANK" && (
 
-                  <div className="mt-5 border border-[#c9a96e]/30 bg-[#fcfaf6] p-5">
+                  <div className="mt-5 border border-[#e5e3de] bg-[#fafaf8] p-5">
 
-                    <p className="font-[var(--font-cinzel)] text-xs tracking-widest text-[#b28a45]">
+                    <p className="ahn-label text-[#a88952]">
                       BANK TRANSFER DETAILS
                     </p>
 
-                    <div className="mt-4 space-y-4">
+                    <div className="mt-4 space-y-4 text-sm">
 
                       <div>
-
-                        <p className="text-xs uppercase tracking-wider text-[#81786a]">
+                        <p className="text-xs text-[#888]">
                           BANK
                         </p>
-
-                        <p className="mt-1 font-[var(--font-cormorant)] text-xl">
+                        <p className="mt-1 text-lg">
                           {BANK_NAME}
                         </p>
-
                       </div>
 
                       <div>
-
-                        <p className="text-xs uppercase tracking-wider text-[#81786a]">
+                        <p className="text-xs text-[#888]">
                           ACCOUNT TITLE
                         </p>
-
-                        <p className="mt-1 font-[var(--font-cormorant)] text-xl">
-                          {BANK_ACCOUNT_TITLE}
+                        <p className="mt-1 text-lg">
+                          {
+                            BANK_ACCOUNT_TITLE
+                          }
                         </p>
-
                       </div>
 
                       <div>
-
-                        <p className="text-xs uppercase tracking-wider text-[#81786a]">
+                        <p className="text-xs text-[#888]">
                           ACCOUNT NUMBER
                         </p>
-
-                        <p className="mt-1 break-all font-[var(--font-cormorant)] text-xl">
+                        <p className="mt-1 break-all text-lg">
                           {
                             BANK_ACCOUNT_NUMBER
                           }
                         </p>
-
                       </div>
 
                       <div>
-
-                        <p className="text-xs uppercase tracking-wider text-[#81786a]">
+                        <p className="text-xs text-[#888]">
                           IBAN
                         </p>
-
-                        <p className="mt-1 break-all font-[var(--font-cormorant)] text-xl">
+                        <p className="mt-1 break-all text-lg">
                           {BANK_IBAN}
                         </p>
-
                       </div>
 
                     </div>
 
-                    <div className="mt-5 border-t border-[#e5dccd] pt-4">
-
-                      <p className="font-[var(--font-cormorant)] text-base leading-7 text-[#756c60]">
-                        After making the payment, please keep your transaction screenshot.
-                        <br />
-                        <strong className="text-[#30291f]">
-                          When you are contacted by us, you have to send the screenshot of the cash transfer.
-                        </strong>
-                      </p>
-
-                    </div>
+                    <p className="mt-5 border-t border-[#e5e3de] pt-4 text-sm leading-6 text-[#666]">
+                      After making the payment,
+                      please keep your transaction
+                      screenshot.
+                      <br />
+                      <strong className="text-[#181818]">
+                        When you are contacted by us,
+                        you have to send the screenshot
+                        of the cash transfer.
+                      </strong>
+                    </p>
 
                   </div>
 
@@ -1009,15 +838,15 @@ function CheckoutContent() {
 
               {/* TOTAL */}
 
-              <div className="mt-6 border border-[#c9a96e]/30 bg-[#fffdf9] p-7">
+              <div className="mt-6 border border-[#e5e3de] p-7">
 
                 <div className="flex items-center justify-between">
 
-                  <span className="font-[var(--font-cormorant)] text-2xl">
+                  <span className="text-2xl">
                     Total
                   </span>
 
-                  <span className="font-[var(--font-cormorant)] text-3xl text-[#b28a45]">
+                  <span className="text-3xl font-medium text-[#ff4f1f]">
                     Rs.{" "}
                     {product.price.toLocaleString(
                       "en-PK"
@@ -1029,14 +858,11 @@ function CheckoutContent() {
                 <button
                   type="submit"
                   disabled={
-                    placingOrder ||
-                    outOfStock
+                    placingOrder
                   }
-                  className="mt-7 w-full bg-[#b28a45] py-5 font-[var(--font-cinzel)] text-xs tracking-[0.25em] text-white transition hover:bg-[#967238] disabled:cursor-not-allowed disabled:bg-[#bdb5a9]"
+                  className="mt-7 w-full bg-[#181818] py-5 text-xs font-semibold tracking-[0.18em] text-white hover:bg-[#333] disabled:opacity-50"
                 >
-                  {outOfStock
-                    ? "OUT OF STOCK"
-                    : placingOrder
+                  {placingOrder
                     ? "PLACING ORDER..."
                     : "PLACE ORDER"}
                 </button>
@@ -1051,46 +877,6 @@ function CheckoutContent() {
 
       </section>
 
-      {/* FOOTER */}
-
-      <footer className="border-t border-[#c9a96e]/30 bg-[#fffdf9] px-6 py-12 text-center">
-
-        <h2 className="font-[var(--font-cinzel)] text-xl tracking-[0.35em] text-[#b28a45]">
-          AHN COLLECTION
-        </h2>
-
-        <p className="mt-4 font-[var(--font-cormorant)] italic text-[#81786a]">
-          Elegance in every thread.
-        </p>
-
-      </footer>
-
-      <style jsx global>{`
-        .label {
-          display: block;
-          margin-bottom: 8px;
-          font-family: var(--font-cinzel);
-          font-size: 9px;
-          letter-spacing: 0.18em;
-          color: #756c60;
-        }
-
-        .input {
-          width: 100%;
-          border: 1px solid rgba(201, 169, 110, 0.4);
-          background: #fcfaf6;
-          padding: 14px 15px;
-          outline: none;
-          font-family: var(--font-cormorant);
-          font-size: 18px;
-          color: #30291f;
-        }
-
-        .input:focus {
-          border-color: #b28a45;
-        }
-      `}</style>
-
     </main>
   );
 }
@@ -1099,10 +885,8 @@ export default function CheckoutPage() {
   return (
     <Suspense
       fallback={
-        <main className="flex min-h-screen items-center justify-center bg-[#fcfaf6]">
-          <p className="font-[var(--font-cormorant)] text-3xl">
-            Preparing checkout...
-          </p>
+        <main className="flex min-h-screen items-center justify-center bg-white">
+          Loading...
         </main>
       }
     >

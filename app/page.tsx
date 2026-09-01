@@ -9,12 +9,12 @@ type Product = {
   name: string;
   description: string | null;
   price: number;
+  original_price: number | null;
   category_id: string | null;
   section: string | null;
   images: string[] | null;
   reel_url: string | null;
   sizes: string[] | null;
-  stock: number;
   featured: boolean;
   active: boolean;
   created_at: string;
@@ -26,13 +26,30 @@ type Category = {
   section: string;
 };
 
-type ReelCardProps = {
-  product: Product;
-};
+function getDiscount(
+  price: number,
+  originalPrice: number | null
+) {
+  if (
+    !originalPrice ||
+    originalPrice <= price ||
+    originalPrice <= 0
+  ) {
+    return 0;
+  }
+
+  return Math.round(
+    ((originalPrice - price) /
+      originalPrice) *
+      100
+  );
+}
 
 function ReelCard({
   product,
-}: ReelCardProps) {
+}: {
+  product: Product;
+}) {
   const videoRef =
     useRef<HTMLVideoElement | null>(null);
 
@@ -67,43 +84,24 @@ function ReelCard({
           loop
           playsInline
           preload="metadata"
-          onLoadedMetadata={(event) => {
-            event.currentTarget.muted = true;
-            event.currentTarget
-              .play()
-              .catch(() => {});
-          }}
-          className="h-full w-full object-cover transition duration-700 group-hover:scale-[1.025]"
+          className="h-full w-full object-cover transition duration-700 group-hover:scale-[1.02]"
         />
 
-        <div className="absolute inset-0 bg-gradient-to-t from-black/70 via-transparent to-black/10" />
-
-        {/* BRAND */}
+        <div className="absolute inset-0 bg-gradient-to-t from-black/70 via-transparent to-transparent" />
 
         <div className="absolute left-5 top-5">
-
           <p className="ahn-label text-white">
             AHN COLLECTION
           </p>
-
         </div>
-
-        {/* UNMUTE */}
 
         <button
           type="button"
           onClick={toggleMute}
-          className="absolute right-4 top-4 flex h-10 w-10 items-center justify-center rounded-full border border-white/40 bg-black/35 text-sm text-white backdrop-blur transition hover:bg-white hover:text-black"
-          title={
-            muted
-              ? "Unmute reel"
-              : "Mute reel"
-          }
+          className="absolute right-4 top-4 flex h-10 w-10 items-center justify-center rounded-full border border-white/40 bg-black/40 text-sm text-white backdrop-blur hover:bg-white hover:text-black"
         >
           {muted ? "🔇" : "🔊"}
         </button>
-
-        {/* PRODUCT */}
 
         <div className="absolute bottom-5 left-5 right-5">
 
@@ -115,62 +113,50 @@ function ReelCard({
             {product.name}
           </h3>
 
-          <p className="mt-1 font-[var(--font-cormorant)] text-lg text-white/90">
-            Rs.{" "}
-            {product.price.toLocaleString("en-PK")}
-          </p>
+          <div className="mt-2 flex items-center gap-3">
+
+            <span className="text-lg text-white">
+              Rs.{" "}
+              {product.price.toLocaleString(
+                "en-PK"
+              )}
+            </span>
+
+            {getDiscount(
+              product.price,
+              product.original_price
+            ) > 0 && (
+              <>
+                <span className="text-sm text-white/60 line-through">
+                  Rs.{" "}
+                  {product.original_price?.toLocaleString(
+                    "en-PK"
+                  )}
+                </span>
+
+                <span className="text-sm text-[#e8d3a5]">
+                  -
+                  {getDiscount(
+                    product.price,
+                    product.original_price
+                  )}
+                  %
+                </span>
+              </>
+            )}
+
+          </div>
 
         </div>
 
       </div>
 
-      <div className="grid grid-cols-2 border-t border-[#e5e3de]">
-
-        <Link
-          href={`/product/${product.id}`}
-          className="py-4 text-center text-xs font-medium tracking-[0.12em] text-[#181818] transition hover:bg-[#181818] hover:text-white"
-        >
-          VIEW
-        </Link>
-
-        <button
-          type="button"
-          className="border-l border-[#e5e3de] py-4 text-center text-xs text-[#181818] transition hover:bg-[#181818] hover:text-white"
-          onClick={() => {
-            if (
-              typeof window !==
-              "undefined"
-            ) {
-              const url =
-                `${window.location.origin}/product/${product.id}`;
-
-              if (navigator.share) {
-                navigator
-                  .share({
-                    title:
-                      product.name,
-                    text:
-                      `Check out ${product.name} from AHN Collection.`,
-                    url,
-                  })
-                  .catch(() => {});
-              } else {
-                navigator.clipboard
-                  .writeText(url)
-                  .then(() =>
-                    alert(
-                      "Product link copied!"
-                    )
-                  )
-                  .catch(() => {});
-              }
-            }
-          }}
-        >
-          SHARE
-        </button>
-
-      </div>
+      <Link
+        href={`/product/${product.id}`}
+        className="block py-4 text-center text-xs font-semibold tracking-[0.12em] text-[#181818] transition hover:bg-[#181818] hover:text-white"
+      >
+        VIEW PRODUCT
+      </Link>
 
     </article>
   );
@@ -207,12 +193,8 @@ export default function Home() {
   const reelsScrollRef =
     useRef<HTMLDivElement | null>(null);
 
-  const isResettingRef =
+  const resetting =
     useRef(false);
-
-  // ==================================================
-  // LOAD WISHLIST
-  // ==================================================
 
   useEffect(() => {
     try {
@@ -229,17 +211,8 @@ export default function Home() {
           setWishlistIds(parsed);
         }
       }
-    } catch (wishlistError) {
-      console.error(
-        "Wishlist load error:",
-        wishlistError
-      );
-    }
+    } catch {}
   }, []);
-
-  // ==================================================
-  // SAVE WISHLIST
-  // ==================================================
 
   useEffect(() => {
     try {
@@ -247,38 +220,19 @@ export default function Home() {
         "ahn_wishlist",
         JSON.stringify(wishlistIds)
       );
-    } catch (wishlistError) {
-      console.error(
-        "Wishlist save error:",
-        wishlistError
-      );
-    }
+    } catch {}
   }, [wishlistIds]);
 
-  // ==================================================
-  // TOGGLE WISHLIST
-  // ==================================================
-
-  function toggleWishlist(
-    productId: string
-  ) {
+  function toggleWishlist(id: string) {
     setWishlistIds(
       (current) =>
-        current.includes(productId)
+        current.includes(id)
           ? current.filter(
-              (id) =>
-                id !== productId
+              (item) => item !== id
             )
-          : [
-              ...current,
-              productId,
-            ]
+          : [...current, id]
     );
   }
-
-  // ==================================================
-  // LOAD STORE
-  // ==================================================
 
   useEffect(() => {
     async function loadStore() {
@@ -286,19 +240,13 @@ export default function Home() {
       setError("");
 
       const [
-        {
-          data: productData,
-          error: productError,
-        },
-        {
-          data: categoryData,
-          error: categoryError,
-        },
+        productsResponse,
+        categoriesResponse,
       ] = await Promise.all([
         supabase
           .from("products")
           .select(
-            "id, name, description, price, category_id, section, images, reel_url, sizes, stock, featured, active, created_at"
+            "id, name, description, price, original_price, category_id, section, images, reel_url, sizes, featured, active, created_at"
           )
           .eq("active", true)
           .order("created_at", {
@@ -315,10 +263,9 @@ export default function Home() {
           }),
       ]);
 
-      if (productError) {
+      if (productsResponse.error) {
         console.error(
-          "Homepage product error:",
-          productError
+          productsResponse.error
         );
 
         setError(
@@ -329,10 +276,9 @@ export default function Home() {
         return;
       }
 
-      if (categoryError) {
+      if (categoriesResponse.error) {
         console.error(
-          "Homepage category error:",
-          categoryError
+          categoriesResponse.error
         );
 
         setError(
@@ -344,11 +290,11 @@ export default function Home() {
       }
 
       setProducts(
-        productData || []
+        productsResponse.data || []
       );
 
       setCategories(
-        categoryData || []
+        categoriesResponse.data || []
       );
 
       setLoading(false);
@@ -357,38 +303,26 @@ export default function Home() {
     loadStore();
   }, []);
 
-  // ==================================================
-  // CATEGORY BUTTONS
-  // ==================================================
-
   const categoryButtons =
     useMemo(() => {
-      const buttons = [
+      return [
         {
           key: "ALL",
           label: "ALL",
         },
+        ...categories.map(
+          (category) => ({
+            key: category.id,
+            label:
+              category.name.toUpperCase(),
+          })
+        ),
+        {
+          key: "REELS",
+          label: "REELS",
+        },
       ];
-
-      for (const category of categories) {
-        buttons.push({
-          key: category.id,
-          label:
-            category.name.toUpperCase(),
-        });
-      }
-
-      buttons.push({
-        key: "REELS",
-        label: "REELS",
-      });
-
-      return buttons;
     }, [categories]);
-
-  // ==================================================
-  // SEARCH + FILTER
-  // ==================================================
 
   const filteredProducts =
     useMemo(() => {
@@ -435,21 +369,17 @@ export default function Home() {
                 product.category_id
             )?.name || "";
 
-          const searchableText =
-            [
-              product.name,
-              product.description ||
-                "",
-              categoryName,
-              product.section ||
-                "",
-            ]
-              .join(" ")
-              .toLowerCase();
-
-          return searchableText.includes(
-            query
-          );
+          return [
+            product.name,
+            product.description ||
+              "",
+            categoryName,
+            product.section ||
+              "",
+          ]
+            .join(" ")
+            .toLowerCase()
+            .includes(query);
         }
       );
     }, [
@@ -461,41 +391,17 @@ export default function Home() {
       wishlistIds,
     ]);
 
-  // ==================================================
-  // REELS
-  // ==================================================
-
   const reelProducts =
-    useMemo(
-      () =>
-        products.filter(
-          (product) =>
-            Boolean(
-              product.reel_url
-            )
-        ),
-      [products]
+    products.filter(
+      (product) =>
+        Boolean(product.reel_url)
     );
 
-  const loopedReels =
-    useMemo(() => {
-      if (
-        reelProducts.length ===
-        0
-      ) {
-        return [];
-      }
-
-      return [
-        ...reelProducts,
-        ...reelProducts,
-        ...reelProducts,
-      ];
-    }, [reelProducts]);
-
-  // ==================================================
-  // INFINITE REEL SCROLL
-  // ==================================================
+  const loopedReels = [
+    ...reelProducts,
+    ...reelProducts,
+    ...reelProducts,
+  ];
 
   function handleReelScroll() {
     const container =
@@ -503,27 +409,25 @@ export default function Home() {
 
     if (
       !container ||
-      isResettingRef.current
+      resetting.current ||
+      reelProducts.length === 0
     ) {
       return;
     }
 
-    const oneSetWidth =
+    const setWidth =
       container.scrollWidth / 3;
 
     if (
       container.scrollLeft <
-      oneSetWidth * 0.4
+      setWidth * 0.4
     ) {
-      isResettingRef.current =
-        true;
-
+      resetting.current = true;
       container.scrollLeft +=
-        oneSetWidth;
+        setWidth;
 
       requestAnimationFrame(() => {
-        isResettingRef.current =
-          false;
+        resetting.current = false;
       });
 
       return;
@@ -531,17 +435,14 @@ export default function Home() {
 
     if (
       container.scrollLeft >
-      oneSetWidth * 1.6
+      setWidth * 1.6
     ) {
-      isResettingRef.current =
-        true;
-
+      resetting.current = true;
       container.scrollLeft -=
-        oneSetWidth;
+        setWidth;
 
       requestAnimationFrame(() => {
-        isResettingRef.current =
-          false;
+        resetting.current = false;
       });
     }
   }
@@ -557,49 +458,74 @@ export default function Home() {
       return;
     }
 
-    const oneSetWidth =
-      container.scrollWidth / 3;
-
     container.scrollLeft =
-      oneSetWidth;
+      container.scrollWidth / 3;
   }, [reelProducts.length]);
 
-  // ==================================================
-  // PRODUCT CARD
-  // ==================================================
+  function shareProduct(
+    product: Product
+  ) {
+    const url =
+      `${window.location.origin}/product/${product.id}`;
+
+    if (navigator.share) {
+      navigator
+        .share({
+          title:
+            product.name,
+          text:
+            `Check out ${product.name} from AHN Collection.`,
+          url,
+        })
+        .catch(() => {});
+    } else {
+      navigator.clipboard
+        .writeText(url)
+        .then(() =>
+          alert(
+            "Product link copied!"
+          )
+        )
+        .catch(() => {});
+    }
+  }
 
   function ProductCard({
     product,
   }: {
     product: Product;
   }) {
-    const imageUrl =
+    const image =
       product.images?.[0] || "";
 
-    const isWishlisted =
-      wishlistIds.includes(
-        product.id
-      );
-
-    const categoryName =
+    const category =
       categories.find(
-        (category) =>
-          category.id ===
+        (item) =>
+          item.id ===
           product.category_id
       )?.name ||
       "COLLECTION";
 
+    const wishlisted =
+      wishlistIds.includes(
+        product.id
+      );
+
+    const discount =
+      getDiscount(
+        product.price,
+        product.original_price
+      );
+
     return (
-      <article className="ahn-product-card group overflow-hidden border border-[#e5e3de] bg-white">
+      <article className="ahn-product-card overflow-hidden border border-[#e5e3de] bg-white">
 
-        {/* IMAGE */}
+        <div className="relative aspect-[3/4] overflow-hidden bg-[#f5f5f3]">
 
-        <div className="relative aspect-[3/4] overflow-hidden bg-[#f4f4f1]">
-
-          {imageUrl ? (
+          {image ? (
 
             <img
-              src={imageUrl}
+              src={image}
               alt={product.name}
               className="ahn-product-image h-full w-full object-cover"
             />
@@ -608,8 +534,8 @@ export default function Home() {
 
             <video
               src={product.reel_url}
-              muted
               autoPlay
+              muted
               loop
               playsInline
               className="ahn-product-image h-full w-full object-cover"
@@ -617,13 +543,11 @@ export default function Home() {
 
           ) : (
 
-            <div className="flex h-full items-center justify-center text-xs tracking-wider text-[#999]">
+            <div className="flex h-full items-center justify-center text-xs text-[#999]">
               NO IMAGE
             </div>
 
           )}
-
-          {/* WISHLIST */}
 
           <button
             type="button"
@@ -632,100 +556,72 @@ export default function Home() {
                 product.id
               )
             }
-            className={`absolute right-4 top-4 flex h-10 w-10 items-center justify-center rounded-full border bg-white/95 text-lg shadow-sm transition ${
-              isWishlisted
+            className={`absolute right-4 top-4 flex h-10 w-10 items-center justify-center rounded-full border bg-white text-lg shadow-sm ${
+              wishlisted
                 ? "border-[#181818] bg-[#181818] text-white"
-                : "border-[#dedbd5] text-[#181818] hover:bg-[#181818] hover:text-white"
+                : "border-[#ddd] text-[#181818]"
             }`}
-            title={
-              isWishlisted
-                ? "Remove from wishlist"
-                : "Add to wishlist"
-            }
           >
-            {isWishlisted
+            {wishlisted
               ? "♥"
               : "♡"}
           </button>
 
         </div>
 
-        {/* INFO */}
-
         <div className="p-5">
 
-          <p className="ahn-label text-[#8b7147]">
-            {categoryName}
+          <p className="ahn-label text-[#a88952]">
+            {category}
           </p>
 
-          <h3 className="mt-2 text-xl font-medium tracking-[-0.02em]">
+          <h3 className="mt-2 text-xl font-medium">
             {product.name}
           </h3>
 
-          <p className="mt-2 text-base text-[#555]">
-            Rs.{" "}
-            {product.price.toLocaleString(
-              "en-PK"
-            )}
-          </p>
+          <div className="mt-3 flex flex-wrap items-baseline gap-3">
 
-          {product.stock <=
-            0 && (
-            <p className="mt-2 text-[10px] font-semibold uppercase tracking-[0.12em] text-red-700">
-              Out of stock
-            </p>
-          )}
+            <span className="text-lg font-medium text-[#ff4f1f]">
+              Rs.{" "}
+              {product.price.toLocaleString(
+                "en-PK"
+              )}
+            </span>
+
+            {discount > 0 && (
+              <>
+                <span className="text-sm text-[#999] line-through">
+                  Rs.{" "}
+                  {product.original_price?.toLocaleString(
+                    "en-PK"
+                  )}
+                </span>
+
+                <span className="text-sm text-[#666]">
+                  -{discount}%
+                </span>
+              </>
+            )}
+
+          </div>
 
         </div>
-
-        {/* ACTIONS */}
 
         <div className="grid grid-cols-2 border-t border-[#e5e3de]">
 
           <button
             type="button"
-            onClick={() => {
-              if (
-                typeof window !==
-                "undefined"
-              ) {
-                const url =
-                  `${window.location.origin}/product/${product.id}`;
-
-                if (
-                  navigator.share
-                ) {
-                  navigator
-                    .share({
-                      title:
-                        product.name,
-                      text:
-                        `Check out ${product.name} from AHN Collection.`,
-                      url,
-                    })
-                    .catch(() => {});
-                } else {
-                  navigator.clipboard
-                    .writeText(url)
-                    .then(() =>
-                      alert(
-                        "Product link copied!"
-                      )
-                    )
-                    .catch(
-                      () => {}
-                    );
-                }
-              }
-            }}
-            className="border-r border-[#e5e3de] py-4 text-xs font-medium tracking-[0.12em] text-[#444] transition hover:bg-[#f5f5f3]"
+            onClick={() =>
+              shareProduct(product)
+            }
+            className="border-r border-[#e5e3de] py-4 text-xs font-semibold tracking-[0.12em] hover:bg-[#f5f5f3]"
           >
             SHARE
           </button>
 
           <Link
             href={`/product/${product.id}`}
-            className="py-4 text-center text-xs font-semibold tracking-[0.12em] text-[#181818] transition hover:bg-[#181818] hover:text-white"
+            className="py-4 text-center text-xs font-semibold tracking-[0.12em] hover:bg-[#181818] hover:text-white"
           >
             VIEW PRODUCT
           </Link>
@@ -736,29 +632,21 @@ export default function Home() {
     );
   }
 
-  // ==================================================
-  // PAGE
-  // ==================================================
-
   return (
     <main className="min-h-screen bg-white text-[#181818]">
 
-      {/* ==================================================
-          HEADER
-      ================================================== */}
+      {/* HEADER */}
 
       <header className="sticky top-0 z-50 border-b border-[#e5e3de] bg-white/95 backdrop-blur">
 
         <div className="mx-auto flex h-20 max-w-7xl items-center justify-between px-6">
-
-          {/* LOGO */}
 
           <Link
             href="/"
             className="flex items-center gap-3"
           >
 
-            <div className="flex h-9 w-9 items-center justify-center border border-[#a88952] text-sm font-semibold tracking-[0.16em] text-[#a88952]">
+            <div className="flex h-9 w-9 items-center justify-center border border-[#a88952] text-sm font-semibold tracking-wider text-[#a88952]">
               AHN
             </div>
 
@@ -768,7 +656,7 @@ export default function Home() {
                 AHN COLLECTION
               </p>
 
-              <p className="mt-0.5 text-[8px] tracking-[0.25em] text-[#888]">
+              <p className="text-[8px] tracking-[0.25em] text-[#888]">
                 EST. 2026
               </p>
 
@@ -776,38 +664,32 @@ export default function Home() {
 
           </Link>
 
-          {/* NAVIGATION */}
-
           <nav className="hidden items-center gap-8 md:flex">
 
             <a
               href="#women"
-              className="text-[11px] font-medium tracking-[0.14em] text-[#555] transition hover:text-[#a88952]"
+              className="text-[11px] font-medium tracking-[0.14em] text-[#555] hover:text-[#a88952]"
             >
               WOMEN
             </a>
 
             <a
               href="#men"
-              className="text-[11px] font-medium tracking-[0.14em] text-[#555] transition hover:text-[#a88952]"
+              className="text-[11px] font-medium tracking-[0.14em] text-[#555] hover:text-[#a88952]"
             >
               MEN
             </a>
 
             <a
               href="#reels"
-              className="text-[11px] font-medium tracking-[0.14em] text-[#555] transition hover:text-[#a88952]"
+              className="text-[11px] font-medium tracking-[0.14em] text-[#555] hover:text-[#a88952]"
             >
               REELS
             </a>
 
           </nav>
 
-          {/* ACTIONS */}
-
           <div className="flex items-center gap-2">
-
-            {/* SEARCH */}
 
             <button
               type="button"
@@ -817,39 +699,28 @@ export default function Home() {
                     !current
                 )
               }
-              className={`flex h-10 w-10 items-center justify-center rounded-full text-lg transition ${
+              className={`flex h-10 w-10 items-center justify-center rounded-full text-lg ${
                 searchOpen
                   ? "bg-[#181818] text-white"
-                  : "text-[#333] hover:bg-[#f3f3f1]"
+                  : "hover:bg-[#f3f3f1]"
               }`}
               title="Search"
             >
               ⌕
             </button>
 
-            {/* WISHLIST */}
-
             <button
               type="button"
-              onClick={() => {
+              onClick={() =>
                 setShowWishlist(
                   (current) =>
                     !current
-                );
-
-                setSelectedCategory(
-                  "ALL"
-                );
-
-                window.scrollTo({
-                  top: 0,
-                  behavior: "smooth",
-                });
-              }}
-              className={`flex h-10 w-10 items-center justify-center rounded-full text-lg transition ${
+                )
+              }
+              className={`flex h-10 w-10 items-center justify-center rounded-full text-lg ${
                 showWishlist
                   ? "bg-[#181818] text-white"
-                  : "text-[#333] hover:bg-[#f3f3f1]"
+                  : "hover:bg-[#f3f3f1]"
               }`}
               title="Wishlist"
             >
@@ -858,11 +729,9 @@ export default function Home() {
                 : "♡"}
             </button>
 
-            {/* CHECKOUT */}
-
             <Link
               href="/checkout"
-              className="flex h-10 w-10 items-center justify-center rounded-full text-lg text-[#333] transition hover:bg-[#f3f3f1]"
+              className="flex h-10 w-10 items-center justify-center rounded-full text-lg hover:bg-[#f3f3f1]"
               title="Checkout"
             >
               ♧
@@ -872,43 +741,23 @@ export default function Home() {
 
         </div>
 
-        {/* SEARCH BAR */}
-
         {searchOpen && (
 
           <div className="border-t border-[#e5e3de] bg-white px-6 py-4">
 
             <div className="mx-auto max-w-3xl">
 
-              <div className="relative">
-
-                <input
-                  autoFocus
-                  value={searchQuery}
-                  onChange={(event) =>
-                    setSearchQuery(
-                      event.target.value
-                    )
-                  }
-                  placeholder="Search products, categories..."
-                  className="ahn-input pr-12"
-                />
-
-                {searchQuery && (
-                  <button
-                    type="button"
-                    onClick={() =>
-                      setSearchQuery(
-                        ""
-                      )
-                    }
-                    className="absolute right-4 top-1/2 -translate-y-1/2 text-lg text-[#777]"
-                  >
-                    ×
-                  </button>
-                )}
-
-              </div>
+              <input
+                autoFocus
+                value={searchQuery}
+                onChange={(event) =>
+                  setSearchQuery(
+                    event.target.value
+                  )
+                }
+                placeholder="Search products, categories..."
+                className="ahn-input"
+              />
 
             </div>
 
@@ -918,9 +767,7 @@ export default function Home() {
 
       </header>
 
-      {/* ==================================================
-          HERO
-      ================================================== */}
+      {/* HERO */}
 
       <section className="border-b border-[#e5e3de] bg-[#fafaf8] px-6 py-24 text-center">
 
@@ -936,9 +783,7 @@ export default function Home() {
           </span>
         </h1>
 
-        <div className="mx-auto my-8 h-px w-12 bg-[#a88952]" />
-
-        <p className="mx-auto max-w-2xl text-base leading-7 text-[#6f6f6b] md:text-lg">
+        <p className="mx-auto mt-8 max-w-2xl text-base leading-7 text-[#6f6f6b]">
           Discover carefully curated pieces
           designed around simplicity, quality
           and timeless style.
@@ -946,51 +791,27 @@ export default function Home() {
 
       </section>
 
-      {/* ==================================================
-          COLLECTION
-      ================================================== */}
+      {/* COLLECTION */}
 
       <section
         id="women"
         className="mx-auto max-w-7xl px-6 py-20"
       >
 
-        <div className="mb-10 flex flex-col gap-5 sm:flex-row sm:items-end sm:justify-between">
+        <div className="mb-10">
 
-          <div>
+          <p className="ahn-label text-[#a88952]">
+            DISCOVER
+          </p>
 
-            <p className="ahn-label text-[#a88952]">
-              DISCOVER
-            </p>
-
-            <h2
-              id="collections"
-              className="ahn-heading mt-3 text-4xl md:text-5xl"
-            >
-              The Collection
-            </h2>
-
-          </div>
-
-          {showWishlist && (
-
-            <button
-              type="button"
-              onClick={() =>
-                setShowWishlist(
-                  false
-                )
-              }
-              className="text-xs font-semibold tracking-[0.12em] text-[#777] underline underline-offset-4"
-            >
-              SHOW ALL PRODUCTS
-            </button>
-
-          )}
+          <h2
+            id="collections"
+            className="ahn-heading mt-3 text-4xl md:text-5xl"
+          >
+            The Collection
+          </h2>
 
         </div>
-
-        {/* FILTERS */}
 
         <div className="mb-12 flex flex-wrap gap-2">
 
@@ -1008,11 +829,11 @@ export default function Home() {
                     false
                   );
                 }}
-                className={`border px-5 py-3 text-[10px] font-semibold tracking-[0.13em] transition ${
+                className={`border px-5 py-3 text-[10px] font-semibold tracking-[0.13em] ${
                   selectedCategory ===
                   category.key
                     ? "border-[#181818] bg-[#181818] text-white"
-                    : "border-[#dedbd5] bg-white text-[#555] hover:border-[#181818]"
+                    : "border-[#dedbd5] hover:border-[#181818]"
                 }`}
               >
                 {category.label}
@@ -1023,82 +844,14 @@ export default function Home() {
 
         </div>
 
-        {/* SEARCH / WISHLIST STATUS */}
-
-        {(searchQuery ||
-          showWishlist) && (
-
-          <div className="mb-8 flex items-center justify-between border-b border-[#e5e3de] pb-4">
-
-            <p className="text-sm text-[#666]">
-
-              {showWishlist
-                ? `Wishlist · ${filteredProducts.length} item${
-                    filteredProducts.length ===
-                    1
-                      ? ""
-                      : "s"
-                  }`
-                : `Search results · ${filteredProducts.length}`}
-
-            </p>
-
-            {searchQuery && (
-              <button
-                type="button"
-                onClick={() =>
-                  setSearchQuery(
-                    ""
-                  )
-                }
-                className="text-xs font-semibold tracking-[0.1em] underline"
-              >
-                CLEAR SEARCH
-              </button>
-            )}
-
-          </div>
-
-        )}
-
-        {/* LOADING */}
-
-        {loading && (
-
-          <div className="py-24 text-center">
-
-            <p className="text-lg text-[#777]">
-              Loading collection...
-            </p>
-
-          </div>
-
-        )}
-
-        {/* ERROR */}
-
-        {!loading &&
-          error && (
-
-            <div className="border border-red-200 bg-red-50 px-6 py-5 text-center text-sm text-red-700">
-              {error}
-            </div>
-
-          )}
-
-        {/* ==================================================
-            REELS CATEGORY
-        ================================================== */}
+        {/* REELS */}
 
         {!loading &&
           !error &&
           selectedCategory ===
             "REELS" && (
 
-            <section
-              id="reels"
-              className="relative"
-            >
+            <section id="reels">
 
               <div className="mb-8">
 
@@ -1110,9 +863,9 @@ export default function Home() {
                   Collection Reels
                 </h3>
 
-                <p className="mt-3 max-w-xl text-sm leading-6 text-[#777]">
-                  Explore the latest AHN
-                  pieces in motion.
+                <p className="mt-3 text-sm text-[#777]">
+                  Explore the latest AHN pieces
+                  in motion.
                 </p>
 
               </div>
@@ -1120,21 +873,13 @@ export default function Home() {
               {reelProducts.length ===
               0 ? (
 
-                <div className="py-20 text-center">
-
-                  <p className="text-lg text-[#777]">
-                    No reels have been uploaded yet.
-                  </p>
-
+                <div className="py-20 text-center text-[#777]">
+                  No reels have been uploaded yet.
                 </div>
 
               ) : (
 
                 <div className="relative">
-
-                  <div className="pointer-events-none absolute left-0 top-0 z-10 h-full w-12 bg-gradient-to-r from-white to-transparent" />
-
-                  <div className="pointer-events-none absolute right-0 top-0 z-10 h-full w-12 bg-gradient-to-l from-white to-transparent" />
 
                   <div
                     ref={reelsScrollRef}
@@ -1149,12 +894,10 @@ export default function Home() {
                         product,
                         index
                       ) => (
-
                         <ReelCard
                           key={`${product.id}-${index}`}
                           product={product}
                         />
-
                       )
                     )}
 
@@ -1168,70 +911,68 @@ export default function Home() {
 
           )}
 
-        {/* ==================================================
-            PRODUCTS
-        ================================================== */}
+        {/* PRODUCTS */}
 
         {!loading &&
           !error &&
           selectedCategory !==
             "REELS" && (
 
-            filteredProducts.length ===
-            0 ? (
+            <>
 
-              <div className="border border-[#e5e3de] bg-[#fafaf8] px-6 py-24 text-center">
+              {(searchQuery ||
+                showWishlist) && (
+                <div className="mb-8 border-b border-[#e5e3de] pb-4 text-sm text-[#666]">
 
-                <p className="text-xl text-[#666]">
+                  {showWishlist
+                    ? `Wishlist · ${filteredProducts.length} item${
+                        filteredProducts.length ===
+                        1
+                          ? ""
+                          : "s"
+                      }`
+                    : `Search results · ${filteredProducts.length}`}
+
+                </div>
+              )}
+
+              {filteredProducts.length ===
+              0 ? (
+
+                <div className="border border-[#e5e3de] bg-[#fafaf8] px-6 py-24 text-center text-[#666]">
+
                   {showWishlist
                     ? "Your wishlist is empty."
                     : searchQuery
                     ? "No products match your search."
                     : "More beautiful pieces are coming soon."}
-                </p>
 
-                {showWishlist &&
-                  wishlistIds.length ===
-                    0 && (
-                    <button
-                      type="button"
-                      onClick={() =>
-                        setShowWishlist(
-                          false
-                        )
-                      }
-                      className="mt-6 border border-[#181818] px-6 py-3 text-xs font-semibold tracking-[0.12em]"
-                    >
-                      BROWSE COLLECTION
-                    </button>
+                </div>
+
+              ) : (
+
+                <div className="grid gap-6 sm:grid-cols-2 lg:grid-cols-3">
+
+                  {filteredProducts.map(
+                    (product) => (
+                      <ProductCard
+                        key={product.id}
+                        product={product}
+                      />
+                    )
                   )}
 
-              </div>
+                </div>
 
-            ) : (
+              )}
 
-              <div className="grid gap-6 sm:grid-cols-2 lg:grid-cols-3">
-
-                {filteredProducts.map(
-                  (product) => (
-                    <ProductCard
-                      key={product.id}
-                      product={product}
-                    />
-                  )
-                )}
-
-              </div>
-
-            )
+            </>
 
           )}
 
       </section>
 
-      {/* ==================================================
-          MEN
-      ================================================== */}
+      {/* MEN */}
 
       <section
         id="men"
@@ -1242,84 +983,50 @@ export default function Home() {
           COMING SOON
         </p>
 
-        <h2 className="ahn-heading mt-4 text-5xl md:text-6xl">
+        <h2 className="ahn-heading mt-4 text-5xl">
           Men&apos;s Collection
         </h2>
 
-        <div className="mx-auto my-7 h-px w-12 bg-[#a88952]" />
-
-        <p className="mx-auto max-w-xl text-base leading-7 text-[#777]">
-          A refined collection for the
-          modern gentleman.
+        <p className="mx-auto mt-6 max-w-xl text-[#777]">
+          A refined collection for the modern gentleman.
         </p>
 
       </section>
 
-      {/* ==================================================
-          PHILOSOPHY
-      ================================================== */}
+      {/* FOOTER */}
 
-      <section className="px-6 py-28 text-center">
+      <footer
+        id="contact"
+        className="border-t border-[#e5e3de] px-6 py-14"
+      >
 
-        <p className="ahn-label text-[#a88952]">
-          OUR PHILOSOPHY
-        </p>
+        <div className="mx-auto flex max-w-7xl flex-col gap-8 md:flex-row md:items-end md:justify-between">
 
-        <h2 className="mx-auto mt-6 max-w-3xl text-4xl font-medium leading-tight tracking-[-0.03em] md:text-6xl">
-          Fashion changes.
-          <br />
-          <span className="text-[#a88952]">
-            Good design remains.
-          </span>
-        </h2>
+          <div>
 
-      </section>
+            <p className="text-lg font-semibold tracking-[0.16em]">
+              AHN COLLECTION
+            </p>
 
-      {/* ==================================================
-          FOOTER
-      ================================================== */}
-
-      <footer className="border-t border-[#e5e3de] bg-white px-6 py-14">
-
-        <div className="mx-auto max-w-7xl">
-
-          <div className="flex flex-col gap-8 md:flex-row md:items-end md:justify-between">
-
-            <div>
-
-              <p className="text-lg font-semibold tracking-[0.16em]">
-                AHN COLLECTION
-              </p>
-
-              <p className="mt-2 text-sm text-[#777]">
-                Elegance in every thread.
-              </p>
-
-            </div>
-
-            <div className="flex gap-8 text-[10px] font-semibold tracking-[0.14em] text-[#666]">
-              <span>
-                INSTAGRAM
-              </span>
-
-              <span>
-                WHATSAPP
-              </span>
-
-              <span>
-                CONTACT
-              </span>
-            </div>
-
-          </div>
-
-          <div className="mt-10 border-t border-[#e5e3de] pt-6">
-
-            <p className="text-[9px] tracking-[0.15em] text-[#999]">
-              © 2026 AHN COLLECTION — ALL RIGHTS RESERVED
+            <p className="mt-2 text-sm text-[#777]">
+              Elegance in every thread.
             </p>
 
           </div>
+
+          <div className="flex gap-8 text-[10px] font-semibold tracking-[0.14em] text-[#666]">
+            <span>INSTAGRAM</span>
+            <span>WHATSAPP</span>
+            <span>CONTACT</span>
+          </div>
+
+        </div>
+
+        <div className="mx-auto mt-10 max-w-7xl border-t border-[#e5e3de] pt-6">
+
+          <p className="text-[9px] tracking-[0.15em] text-[#999]">
+            © 2026 AHN COLLECTION — ALL RIGHTS RESERVED
+          </p>
 
         </div>
 

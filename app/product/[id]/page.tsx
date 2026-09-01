@@ -10,15 +10,14 @@ type Product = {
   name: string;
   description: string | null;
   price: number;
+  original_price: number | null;
   category_id: string | null;
   section: string | null;
   images: string[] | null;
   reel_url: string | null;
   sizes: string[] | null;
-  stock: number;
   featured: boolean;
   active: boolean;
-  created_at: string;
 };
 
 type Category = {
@@ -27,10 +26,29 @@ type Category = {
   section: string;
 };
 
+function getDiscount(
+  price: number,
+  originalPrice: number | null
+) {
+  if (
+    !originalPrice ||
+    originalPrice <= price ||
+    originalPrice <= 0
+  ) {
+    return 0;
+  }
+
+  return Math.round(
+    ((originalPrice - price) /
+      originalPrice) *
+      100
+  );
+}
+
 export default function ProductPage() {
   const params = useParams();
 
-  const productId =
+  const id =
     typeof params.id === "string"
       ? params.id
       : "";
@@ -50,72 +68,61 @@ export default function ProductPage() {
   const [selectedSize, setSelectedSize] =
     useState("");
 
-  const [selectedImage, setSelectedImage] =
-    useState(0);
-
   const [muted, setMuted] =
     useState(true);
 
   const reelRef =
     useRef<HTMLVideoElement | null>(null);
 
-  // ==================================================
-  // LOAD PRODUCT
-  // ==================================================
-
   useEffect(() => {
-    async function loadProduct() {
-      if (!productId) {
-        setError("Invalid product ID.");
+    async function load() {
+      if (!id) {
+        setError(
+          "Invalid product."
+        );
         setLoading(false);
         return;
       }
 
-      setLoading(true);
-      setError("");
-
       const {
-        data: productData,
+        data,
         error: productError,
       } = await supabase
         .from("products")
         .select(
-          "id, name, description, price, category_id, section, images, reel_url, sizes, stock, featured, active, created_at"
+          "id, name, description, price, original_price, category_id, section, images, reel_url, sizes, featured, active"
         )
-        .eq("id", productId)
+        .eq("id", id)
         .eq("active", true)
         .single();
 
-      if (productError || !productData) {
-        console.error(
-          "Product load error:",
-          productError
-        );
-
+      if (
+        productError ||
+        !data
+      ) {
         setError(
           productError?.message ||
             "Product not found."
         );
-
         setLoading(false);
         return;
       }
 
-      const loadedProduct =
-        productData as Product;
+      const loaded =
+        data as Product;
 
-      setProduct(loadedProduct);
+      setProduct(loaded);
 
       if (
-        Array.isArray(loadedProduct.sizes) &&
-        loadedProduct.sizes.length > 0
+        loaded.sizes &&
+        loaded.sizes.length > 0
       ) {
         setSelectedSize(
-          loadedProduct.sizes[0]
+          loaded.sizes[0]
         );
       }
 
-      if (loadedProduct.category_id) {
+      if (loaded.category_id) {
         const {
           data: categoryData,
         } = await supabase
@@ -125,7 +132,7 @@ export default function ProductPage() {
           )
           .eq(
             "id",
-            loadedProduct.category_id
+            loaded.category_id
           )
           .single();
 
@@ -139,15 +146,12 @@ export default function ProductPage() {
       setLoading(false);
     }
 
-    loadProduct();
-  }, [productId]);
-
-  // ==================================================
-  // UNMUTE
-  // ==================================================
+    load();
+  }, [id]);
 
   function toggleMute() {
-    const video = reelRef.current;
+    const video =
+      reelRef.current;
 
     if (!video) return;
 
@@ -160,14 +164,7 @@ export default function ProductPage() {
     }
   }
 
-  // ==================================================
-  // SHARE
-  // ==================================================
-
   async function shareProduct() {
-    const url =
-      window.location.href;
-
     try {
       if (navigator.share) {
         await navigator.share({
@@ -176,74 +173,54 @@ export default function ProductPage() {
             "AHN Collection",
           text:
             `Check out ${product?.name || "this product"} from AHN Collection.`,
-          url,
+          url:
+            window.location.href,
         });
       } else {
         await navigator.clipboard.writeText(
-          url
+          window.location.href
         );
 
         alert(
           "Product link copied!"
         );
       }
-    } catch {
-      // User cancelled share.
-    }
+    } catch {}
   }
-
-  // ==================================================
-  // LOADING
-  // ==================================================
 
   if (loading) {
     return (
-      <main className="flex min-h-screen items-center justify-center bg-[#fcfaf6]">
-
-        <div className="text-center">
-
-          <p className="font-[var(--font-cinzel)] text-xs tracking-[0.4em] text-[#b28a45]">
-            AHN COLLECTION
-          </p>
-
-          <h1 className="mt-5 font-[var(--font-cormorant)] text-4xl">
-            Loading article...
-          </h1>
-
-        </div>
-
+      <main className="flex min-h-screen items-center justify-center bg-white">
+        <p className="text-lg text-[#777]">
+          Loading product...
+        </p>
       </main>
     );
   }
-
-  // ==================================================
-  // NOT FOUND
-  // ==================================================
 
   if (!product) {
     return (
-      <main className="flex min-h-screen items-center justify-center bg-[#fcfaf6] px-6">
+      <main className="flex min-h-screen items-center justify-center bg-white px-6">
 
-        <div className="max-w-xl text-center">
+        <div className="text-center">
 
-          <p className="font-[var(--font-cinzel)] text-xs tracking-[0.4em] text-[#b28a45]">
+          <p className="ahn-label text-[#a88952]">
             AHN COLLECTION
           </p>
 
-          <h1 className="mt-6 font-[var(--font-cormorant)] text-5xl">
+          <h1 className="mt-5 text-5xl font-medium">
             Product Not Found
           </h1>
 
-          <p className="mt-5 font-[var(--font-cormorant)] text-xl text-[#81786a]">
-            {error ||
-              "The article you are looking for does not exist."}
+          <p className="mt-4 text-[#777]">
+            {error}
           </p>
 
           <Link
             href="/"
-            className="mt-8 inline-block bg-[#b28a45] px-8 py-4 font-[var(--font-cinzel)] text-xs tracking-[0.2em] text-white transition hover:bg-[#967238]"
+            className="mt-8 inline-flex bg-[#181818] px-7 py-4 text-xs font-semibold tracking-[0.15em] text-white"
           >
-            RETURN TO COLLECTION
+            RETURN HOME
           </Link>
 
         </div>
@@ -252,146 +229,56 @@ export default function ProductPage() {
     );
   }
 
+  const discount =
+    getDiscount(
+      product.price,
+      product.original_price
+    );
+
   const images =
-    Array.isArray(product.images)
-      ? product.images
-      : [];
-
-  const sizes =
-    Array.isArray(product.sizes)
-      ? product.sizes
-      : [];
-
-  const currentImage =
-    images[selectedImage] ||
-    images[0] ||
-    "";
-
-  const outOfStock =
-    product.stock <= 0;
-
-  const sectionLabel =
-    product.section
-      ? product.section.toUpperCase()
-      : "COLLECTION";
-
-  // ==================================================
-  // PAGE
-  // ==================================================
+    product.images || [];
 
   return (
-    <main className="min-h-screen bg-[#fcfaf6] text-[#30291f]">
+    <main className="min-h-screen bg-white text-[#181818]">
 
-      {/* ==================================================
-          HEADER
-      ================================================== */}
+      <header className="border-b border-[#e5e3de]">
 
-      <header className="border-b border-[#c9a96e]/30 bg-[#fffdf9]">
-
-        <div className="mx-auto flex h-24 max-w-7xl items-center justify-between px-6">
+        <div className="mx-auto flex h-20 max-w-7xl items-center justify-between px-6">
 
           <Link
             href="/"
-            className="text-center"
+            className="text-sm font-semibold tracking-[0.15em]"
           >
-
-            <h1 className="font-[var(--font-cinzel)] text-3xl tracking-[0.25em] text-[#b28a45]">
-              AHN
-            </h1>
-
-            <div className="mx-auto mt-1 h-px w-12 bg-[#c9a96e]" />
-
-            <p className="mt-1 font-[var(--font-cinzel)] text-[8px] tracking-[0.45em] text-[#75664e]">
-              COLLECTION
-            </p>
-
+            AHN COLLECTION
           </Link>
 
-          <nav className="hidden items-center gap-10 md:flex">
-
-            <Link
-              href="/"
-              className="font-[var(--font-cinzel)] text-xs tracking-[0.2em] text-[#756c60] hover:text-[#b28a45]"
-            >
-              WOMEN
-            </Link>
-
-            <Link
-              href="/"
-              className="font-[var(--font-cinzel)] text-xs tracking-[0.2em] text-[#756c60] hover:text-[#b28a45]"
-            >
-              MEN
-            </Link>
-
-            <Link
-              href="/#collections"
-              className="font-[var(--font-cinzel)] text-xs tracking-[0.2em] text-[#756c60] hover:text-[#b28a45]"
-            >
-              COLLECTIONS
-            </Link>
-
-            <Link
-              href="/#reels"
-              className="font-[var(--font-cinzel)] text-xs tracking-[0.2em] text-[#756c60] hover:text-[#b28a45]"
-            >
-              REELS
-            </Link>
-
-          </nav>
-
-          <div className="flex items-center gap-5 text-[#8c7044]">
-
-            <button
-              type="button"
-              className="text-xl hover:text-[#b28a45]"
-            >
-              ⌕
-            </button>
-
-            <button
-              type="button"
-              className="text-xl hover:text-[#b28a45]"
-            >
-              ♡
-            </button>
-
-            <Link
-              href={`/checkout?product=${product.id}`}
-              className="text-xl hover:text-[#b28a45]"
-            >
-              ♧
-            </Link>
-
-          </div>
+          <Link
+            href="/checkout"
+            className="text-xs font-semibold tracking-[0.12em]"
+          >
+            CHECKOUT
+          </Link>
 
         </div>
 
       </header>
 
-      {/* ==================================================
-          PRODUCT
-      ================================================== */}
-
-      <section className="mx-auto max-w-7xl px-6 py-14">
+      <section className="mx-auto max-w-7xl px-6 py-12">
 
         <Link
           href="/"
-          className="mb-10 inline-block font-[var(--font-cinzel)] text-[10px] tracking-[0.2em] text-[#8c7044] hover:text-[#b28a45]"
+          className="mb-8 inline-block text-xs font-medium tracking-[0.1em] text-[#777]"
         >
           ← BACK TO COLLECTION
         </Link>
 
         <div className="grid gap-14 lg:grid-cols-2">
 
-          {/* ==================================================
-              MEDIA
-          ================================================== */}
+          {/* MEDIA */}
 
           <div>
 
-            {/* MAIN IMAGE / REEL */}
-
-            <div className="relative overflow-hidden border border-[#c9a96e]/30 bg-[#eee9df]">
+            <div className="relative overflow-hidden bg-[#f5f5f3]">
 
               {product.reel_url ? (
 
@@ -404,87 +291,57 @@ export default function ProductPage() {
                     muted
                     loop
                     playsInline
-                    controls={false}
-                    className="block aspect-[3/4] w-full object-cover"
+                    className="aspect-[3/4] w-full object-cover"
                   />
-
-                  <div className="absolute inset-0 bg-gradient-to-t from-black/35 via-transparent to-transparent" />
 
                   <button
                     type="button"
-                    onClick={toggleMute}
-                    className="absolute right-5 top-5 flex h-11 w-11 items-center justify-center rounded-full border border-white/40 bg-black/35 text-white backdrop-blur transition hover:bg-[#b28a45]"
-                    title={
-                      muted
-                        ? "Unmute"
-                        : "Mute"
+                    onClick={
+                      toggleMute
                     }
+                    className="absolute right-5 top-5 flex h-11 w-11 items-center justify-center rounded-full bg-black/50 text-white"
                   >
                     {muted
                       ? "🔇"
                       : "🔊"}
                   </button>
 
-                  <div className="absolute bottom-5 left-5">
-
-                    <p className="font-[var(--font-cinzel)] text-[9px] tracking-[0.3em] text-white">
-                      AHN MOTION
-                    </p>
-
-                  </div>
-
                 </div>
 
-              ) : currentImage ? (
+              ) : images[0] ? (
 
                 <img
-                  src={currentImage}
+                  src={images[0]}
                   alt={product.name}
-                  className="block aspect-[3/4] w-full object-cover"
+                  className="aspect-[3/4] w-full object-cover"
                 />
 
               ) : (
 
-                <div className="flex aspect-[3/4] items-center justify-center text-xs tracking-widest text-[#9a8e7c]">
-                  NO MEDIA
+                <div className="flex aspect-[3/4] items-center justify-center text-sm text-[#999]">
+                  NO IMAGE
                 </div>
 
               )}
 
             </div>
 
-            {/* THUMBNAILS */}
-
-            {images.length > 1 && (
+            {images.length >
+              1 && (
 
               <div className="mt-4 grid grid-cols-4 gap-3">
 
                 {images.map(
-                  (image, index) => (
-
-                    <button
+                  (
+                    image,
+                    index
+                  ) => (
+                    <img
                       key={`${image}-${index}`}
-                      type="button"
-                      onClick={() =>
-                        setSelectedImage(
-                          index
-                        )
-                      }
-                      className={`overflow-hidden border transition ${
-                        selectedImage === index
-                          ? "border-[#b28a45]"
-                          : "border-[#c9a96e]/30"
-                      }`}
-                    >
-
-                      <img
-                        src={image}
-                        alt={`${product.name} ${index + 1}`}
-                        className="aspect-square w-full object-cover"
-                      />
-
-                    </button>
-
+                      src={image}
+                      alt={`${product.name} ${index + 1}`}
+                      className="aspect-square w-full object-cover"
+                    />
                   )
                 )}
 
@@ -494,86 +351,70 @@ export default function ProductPage() {
 
           </div>
 
-          {/* ==================================================
-              PRODUCT INFO
-          ================================================== */}
+          {/* INFO */}
 
-          <div className="lg:sticky lg:top-10 lg:h-fit">
+          <div className="lg:pt-8">
 
-            {/* CATEGORY */}
-
-            <p className="font-[var(--font-cinzel)] text-xs tracking-[0.35em] text-[#b28a45]">
-              {sectionLabel}
+            <p className="ahn-label text-[#a88952]">
+              {product.section?.toUpperCase() ||
+                "COLLECTION"}
               {" · "}
               {category?.name ||
                 "COLLECTION"}
             </p>
 
-            {/* NAME */}
-
-            <h1 className="mt-5 font-[var(--font-cormorant)] text-6xl leading-none text-[#30291f]">
+            <h1 className="mt-4 text-5xl font-medium tracking-[-0.04em] md:text-6xl">
               {product.name}
             </h1>
 
-            <div className="my-7 h-px w-16 bg-[#c9a96e]" />
+            <div className="mt-7 flex flex-wrap items-baseline gap-4">
 
-            {/* PRICE */}
+              <span className="text-3xl font-medium text-[#ff4f1f]">
+                Rs.{" "}
+                {product.price.toLocaleString(
+                  "en-PK"
+                )}
+              </span>
 
-            <p className="font-[var(--font-cormorant)] text-3xl text-[#b28a45]">
-              Rs.{" "}
-              {product.price.toLocaleString(
-                "en-PK"
+              {discount > 0 && (
+                <>
+                  <span className="text-lg text-[#999] line-through">
+                    Rs.{" "}
+                    {product.original_price?.toLocaleString(
+                      "en-PK"
+                    )}
+                  </span>
+
+                  <span className="text-base font-medium text-[#666]">
+                    -{discount}%
+                  </span>
+                </>
               )}
-            </p>
 
-            {/* STOCK */}
-
-            <p
-              className={`mt-3 font-[var(--font-cinzel)] text-[9px] tracking-[0.2em] ${
-                outOfStock
-                  ? "text-red-700"
-                  : "text-green-700"
-              }`}
-            >
-              {outOfStock
-                ? "OUT OF STOCK"
-                : `${product.stock} IN STOCK`}
-            </p>
-
-            {/* DESCRIPTION */}
+            </div>
 
             {product.description && (
 
-              <p className="mt-7 font-[var(--font-cormorant)] text-xl leading-8 text-[#756c60]">
+              <p className="mt-7 max-w-xl text-base leading-7 text-[#686868]">
                 {product.description}
               </p>
 
             )}
 
-            {/* SIZE */}
-
-            {sizes.length > 0 && (
+            {product.sizes &&
+              product.sizes.length >
+                0 && (
 
               <div className="mt-10">
 
-                <div className="mb-4 flex items-center justify-between">
+                <p className="mb-4 text-xs font-semibold tracking-[0.15em]">
+                  SELECT SIZE
+                </p>
 
-                  <p className="font-[var(--font-cinzel)] text-xs tracking-widest">
-                    SELECT SIZE
-                  </p>
+                <div className="flex flex-wrap gap-2">
 
-                  <span className="text-xs text-[#81786a]">
-                    {selectedSize ||
-                      "Select"}
-                  </span>
-
-                </div>
-
-                <div className="flex flex-wrap gap-3">
-
-                  {sizes.map(
+                  {product.sizes.map(
                     (size) => (
-
                       <button
                         key={size}
                         type="button"
@@ -582,15 +423,15 @@ export default function ProductPage() {
                             size
                           )
                         }
-                        className={`border px-6 py-3 font-[var(--font-cinzel)] text-xs transition ${
-                          selectedSize === size
-                            ? "border-[#b28a45] bg-[#b28a45] text-white"
-                            : "border-[#c9a96e]/50 hover:border-[#b28a45] hover:bg-[#b28a45] hover:text-white"
+                        className={`border px-5 py-3 text-xs font-semibold ${
+                          selectedSize ===
+                          size
+                            ? "border-[#181818] bg-[#181818] text-white"
+                            : "border-[#d8d5cf] hover:border-[#181818]"
                         }`}
                       >
                         {size}
                       </button>
-
                     )
                   )}
 
@@ -600,101 +441,89 @@ export default function ProductPage() {
 
             )}
 
-            {/* BUY NOW */}
+            <div className="mt-10 grid gap-3">
 
-            <Link
-              href={
-                outOfStock
-                  ? "#"
-                  : `/checkout?product=${product.id}${
-                      selectedSize
-                        ? `&size=${encodeURIComponent(selectedSize)}`
-                        : ""
-                    }`
-              }
-              onClick={(event) => {
-                if (outOfStock) {
-                  event.preventDefault();
-                }
+              <Link
+                href={`/checkout?product=${product.id}${
+                  selectedSize
+                    ? `&size=${encodeURIComponent(selectedSize)}`
+                    : ""
+                }`}
+                onClick={(event) => {
+                  if (
+                    product.sizes &&
+                    product.sizes.length >
+                      0 &&
+                    !selectedSize
+                  ) {
+                    event.preventDefault();
 
-                if (
-                  sizes.length > 0 &&
-                  !selectedSize
-                ) {
-                  event.preventDefault();
-
-                  alert(
-                    "Please select a size first."
-                  );
-                }
-              }}
-              className={`mt-10 block w-full py-5 text-center font-[var(--font-cinzel)] text-xs tracking-[0.25em] transition ${
-                outOfStock
-                  ? "cursor-not-allowed bg-[#bdb5a9] text-white"
-                  : "bg-[#b28a45] text-white hover:bg-[#967238]"
-              }`}
-            >
-              {outOfStock
-                ? "OUT OF STOCK"
-                : "BUY NOW"}
-            </Link>
-
-            {/* ACTION ROW */}
-
-            <div className="mt-4 grid grid-cols-2 gap-4">
-
-              <button
-                type="button"
-                className="border border-[#b28a45] py-5 font-[var(--font-cinzel)] text-xs tracking-[0.2em] text-[#b28a45] transition hover:bg-[#b28a45] hover:text-white"
+                    alert(
+                      "Please select a size first."
+                    );
+                  }
+                }}
+                className="bg-[#181818] py-5 text-center text-xs font-semibold tracking-[0.18em] text-white hover:bg-[#333]"
               >
-                ♡ ADD TO WISHLIST
-              </button>
+                BUY NOW
+              </Link>
 
-              <button
-                type="button"
-                onClick={shareProduct}
-                className="border border-[#b28a45] py-5 font-[var(--font-cinzel)] text-xs tracking-[0.2em] text-[#b28a45] transition hover:bg-[#b28a45] hover:text-white"
-              >
-                ↗ SHARE
-              </button>
+              <div className="grid grid-cols-2 gap-3">
+
+                <button
+                  type="button"
+                  className="border border-[#181818] py-5 text-xs font-semibold tracking-[0.12em]"
+                >
+                  ♡ ADD TO WISHLIST
+                </button>
+
+                <button
+                  type="button"
+                  onClick={
+                    shareProduct
+                  }
+                  className="border border-[#181818] py-5 text-xs font-semibold tracking-[0.12em]"
+                >
+                  ↗ SHARE
+                </button>
+
+              </div>
 
             </div>
 
-            {/* INFORMATION */}
+            <div className="mt-10 border-t border-[#e5e3de]">
 
-            <div className="mt-10 border-t border-[#c9a96e]/30">
+              <div className="border-b border-[#e5e3de] py-5">
 
-              <div className="border-b border-[#c9a96e]/20 py-5">
-
-                <p className="font-[var(--font-cinzel)] text-xs tracking-widest">
+                <p className="ahn-label">
                   DELIVERY
                 </p>
 
-                <p className="mt-2 font-[var(--font-cormorant)] text-lg text-[#756c60]">
+                <p className="mt-2 text-sm text-[#666]">
                   Delivery available across Pakistan.
                 </p>
 
               </div>
 
-              <div className="border-b border-[#c9a96e]/20 py-5">
+              <div className="border-b border-[#e5e3de] py-5">
 
-                <p className="font-[var(--font-cinzel)] text-xs tracking-widest">
+                <p className="ahn-label">
                   PAYMENT
                 </p>
 
-                <p className="mt-2 font-[var(--font-cormorant)] text-lg text-[#756c60]">
+                <p className="mt-2 text-sm text-[#666]">
                   Cash on Delivery, JazzCash and Bank Transfer.
                 </p>
 
               </div>
 
-              <div className="border-b border-[#c9a96e]/20 py-5">
+              <div className="py-5">
 
-                <p className="font-[var(--font-cinzel)] text-xs tracking-widest">
+                <p className="ahn-label">
                   CUSTOMER CARE
                 </p>
 
-                <p className="mt-2 font-[var(--font-cormorant)] text-lg text-[#756c60]">
+                <p className="mt-2 text-sm text-[#666]">
                   Contact AHN Collection for questions,
                   returns and assistance.
                 </p>
@@ -708,28 +537,6 @@ export default function ProductPage() {
         </div>
 
       </section>
-
-      {/* ==================================================
-          FOOTER
-      ================================================== */}
-
-      <footer className="border-t border-[#c9a96e]/30 bg-[#fffdf9] px-6 py-14 text-center">
-
-        <h2 className="font-[var(--font-cinzel)] text-xl tracking-[0.35em] text-[#b28a45]">
-          AHN COLLECTION
-        </h2>
-
-        <div className="mx-auto my-5 h-px w-16 bg-[#c9a96e]" />
-
-        <p className="font-[var(--font-cormorant)] text-lg italic text-[#81786a]">
-          Elegance in every thread.
-        </p>
-
-        <p className="mt-5 font-[var(--font-cinzel)] text-[9px] tracking-[0.2em] text-[#9b9182]">
-          © 2026 AHN COLLECTION — ALL RIGHTS RESERVED
-        </p>
-
-      </footer>
 
     </main>
   );

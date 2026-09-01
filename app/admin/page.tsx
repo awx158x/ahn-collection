@@ -2,19 +2,18 @@
 
 import { useEffect, useState } from "react";
 import Link from "next/link";
-import { supabase } from "../../lib/supabase";
 
 type Product = {
   id: string;
   name: string;
   description: string | null;
   price: number;
+  original_price: number | null;
   category_id: string | null;
   section: string | null;
   images: string[] | null;
   reel_url: string | null;
   sizes: string[] | null;
-  stock: number;
   featured: boolean;
   active: boolean;
   created_at: string;
@@ -24,7 +23,7 @@ type Category = {
   id: string;
   name: string;
   section: string;
-  created_at: string;
+  created_at?: string;
 };
 
 type Order = {
@@ -44,6 +43,24 @@ type Order = {
   amount: number;
   created_at: string;
 };
+
+function getDiscount(
+  price: number,
+  originalPrice: number | null
+) {
+  if (
+    !originalPrice ||
+    originalPrice <= price
+  ) {
+    return 0;
+  }
+
+  return Math.round(
+    ((originalPrice - price) /
+      originalPrice) *
+      100
+  );
+}
 
 export default function AdminPage() {
   const [activeTab, setActiveTab] =
@@ -76,52 +93,70 @@ export default function AdminPage() {
   const [showCategoryModal, setShowCategoryModal] =
     useState(false);
 
-  const [newCategoryName, setNewCategoryName] =
+  const [categoryName, setCategoryName] =
     useState("");
 
-  const [newCategorySection, setNewCategorySection] =
+  const [categorySection, setCategorySection] =
     useState("women");
 
   const [savingCategory, setSavingCategory] =
     useState(false);
 
-  // ==================================================
-  // LOAD PRODUCTS
-  // ==================================================
-
   async function loadProducts() {
     setLoadingProducts(true);
 
-    const {
-      data,
-      error,
-    } = await supabase
-      .from("products")
+    const response =
+      await fetch(
+        "/api/admin/products",
+        {
+          cache: "no-store",
+        }
+      ).catch(() => null);
+
+    if (response) {
+      const result =
+        await response.json();
+
+      if (response.ok) {
+        setProducts(
+          result.products || []
+        );
+
+        setLoadingProducts(false);
+        return;
+      }
+    }
+
+    // Fallback to browser Supabase query
+const { supabase } =
+  await import(
+    "../../lib/supabase"
+  );
+
+const {
+  data,
+  error,
+} = await supabase
+  .from("products")
       .select(
-        "id, name, description, price, category_id, section, images, reel_url, sizes, stock, featured, active, created_at"
+        "id, name, description, price, original_price, category_id, section, images, reel_url, sizes, featured, active, created_at"
       )
       .order("created_at", {
         ascending: false,
       });
 
     if (error) {
-      console.error(
-        "Products error:",
-        error
+      setError(
+        error.message
       );
-
-      setError(error.message);
-      setLoadingProducts(false);
-      return;
+    } else {
+      setProducts(
+        data || []
+      );
     }
 
-    setProducts(data || []);
     setLoadingProducts(false);
   }
-
-  // ==================================================
-  // LOAD CATEGORIES
-  // ==================================================
 
   async function loadCategories() {
     setLoadingCategories(true);
@@ -140,21 +175,16 @@ export default function AdminPage() {
 
       if (!response.ok) {
         throw new Error(
-          result.error ||
-            "Could not load categories."
+          result.error
         );
       }
 
       setCategories(
-        result.categories || []
+        result.categories ||
+          []
       );
 
     } catch (err) {
-      console.error(
-        "Categories error:",
-        err
-      );
-
       setError(
         err instanceof Error
           ? err.message
@@ -164,10 +194,6 @@ export default function AdminPage() {
       setLoadingCategories(false);
     }
   }
-
-  // ==================================================
-  // LOAD ORDERS
-  // ==================================================
 
   async function loadOrders() {
     setLoadingOrders(true);
@@ -186,8 +212,7 @@ export default function AdminPage() {
 
       if (!response.ok) {
         throw new Error(
-          result.error ||
-            "Could not load orders."
+          result.error
         );
       }
 
@@ -196,11 +221,6 @@ export default function AdminPage() {
       );
 
     } catch (err) {
-      console.error(
-        "Orders error:",
-        err
-      );
-
       setError(
         err instanceof Error
           ? err.message
@@ -211,85 +231,187 @@ export default function AdminPage() {
     }
   }
 
-  // ==================================================
-  // INITIAL LOAD
-  // ==================================================
-
   useEffect(() => {
     loadProducts();
     loadCategories();
     loadOrders();
   }, []);
 
-  // ==================================================
-  // CATEGORY NAME
-  // ==================================================
-
   function getCategoryName(
-    categoryId: string | null
+    id: string | null
   ) {
-    if (!categoryId) {
-      return "Uncategorized";
-    }
-
     return (
       categories.find(
         (category) =>
-          category.id === categoryId
+          category.id === id
       )?.name ||
       "Uncategorized"
     );
   }
 
-  // ==================================================
-  // PRICE
-  // ==================================================
-
-  function formatPrice(price: number) {
+  function formatPrice(
+    price: number
+  ) {
     return new Intl.NumberFormat(
       "en-PK"
     ).format(price);
   }
 
-  // ==================================================
-  // DATE
-  // ==================================================
-
-  function formatDate(date: string) {
+  function formatDate(
+    date: string
+  ) {
     return new Date(
       date
-    ).toLocaleString("en-PK", {
-      dateStyle: "medium",
-      timeStyle: "short",
-    });
+    ).toLocaleString(
+      "en-PK",
+      {
+        dateStyle: "medium",
+        timeStyle: "short",
+      }
+    );
   }
 
-  // ==================================================
-  // DELETE PRODUCT
-  // ==================================================
+  async function toggleActive(
+    product: Product
+  ) {
+    setError("");
+    setSuccess("");
+
+    const response =
+      await fetch(
+        "/api/admin/products",
+        {
+          method: "PATCH",
+          headers: {
+            "Content-Type":
+              "application/json",
+          },
+          body: JSON.stringify({
+            productId:
+              product.id,
+            active:
+              !product.active,
+          }),
+        }
+      );
+
+    const result =
+      await response.json();
+
+    if (!response.ok) {
+      setError(
+        result.error ||
+          "Could not update product."
+      );
+      return;
+    }
+
+    setProducts(
+      (current) =>
+        current.map(
+          (item) =>
+            item.id ===
+            product.id
+              ? {
+                  ...item,
+                  active:
+                    !product.active,
+                }
+              : item
+        )
+    );
+
+    setSuccess(
+      product.active
+        ? "Product hidden."
+        : "Product published."
+    );
+  }
+
+  async function toggleFeatured(
+    product: Product
+  ) {
+    setError("");
+    setSuccess("");
+
+    const response =
+      await fetch(
+        "/api/admin/products",
+        {
+          method: "PATCH",
+          headers: {
+            "Content-Type":
+              "application/json",
+          },
+          body: JSON.stringify({
+            productId:
+              product.id,
+            featured:
+              !product.featured,
+          }),
+        }
+      );
+
+    const result =
+      await response.json();
+
+    if (!response.ok) {
+      setError(
+        result.error ||
+          "Could not update product."
+      );
+      return;
+    }
+
+    setProducts(
+      (current) =>
+        current.map(
+          (item) =>
+            item.id ===
+            product.id
+              ? {
+                  ...item,
+                  featured:
+                    !product.featured,
+                }
+              : item
+        )
+    );
+  }
 
   async function deleteProduct(
     product: Product
   ) {
     const confirmed =
       window.confirm(
-        `Delete "${product.name}"? This cannot be undone.`
+        `Delete "${product.name}"?`
       );
 
     if (!confirmed) return;
 
-    setError("");
-    setSuccess("");
+    const response =
+      await fetch(
+        "/api/admin/products",
+        {
+          method: "DELETE",
+          headers: {
+            "Content-Type":
+              "application/json",
+          },
+          body: JSON.stringify({
+            id: product.id,
+          }),
+        }
+      );
 
-    const {
-      error,
-    } = await supabase
-      .from("products")
-      .delete()
-      .eq("id", product.id);
+    const result =
+      await response.json();
 
-    if (error) {
-      setError(error.message);
+    if (!response.ok) {
+      setError(
+        result.error ||
+          "Could not delete product."
+      );
       return;
     }
 
@@ -302,111 +424,9 @@ export default function AdminPage() {
     );
 
     setSuccess(
-      "Product deleted successfully."
+      "Product deleted."
     );
   }
-
-  // ==================================================
-  // ACTIVE
-  // ==================================================
-
-  async function toggleActive(
-    product: Product
-  ) {
-    setError("");
-    setSuccess("");
-
-    const {
-      data,
-      error,
-    } = await supabase
-      .from("products")
-      .update({
-        active:
-          !product.active,
-      })
-      .eq("id", product.id)
-      .select()
-      .single();
-
-    if (error) {
-      setError(error.message);
-      return;
-    }
-
-    if (data) {
-      setProducts(
-        (current) =>
-          current.map(
-            (item) =>
-              item.id ===
-              product.id
-                ? {
-                    ...item,
-                    active:
-                      data.active,
-                  }
-                : item
-          )
-      );
-
-      setSuccess(
-        data.active
-          ? "Product published."
-          : "Product hidden."
-      );
-    }
-  }
-
-  // ==================================================
-  // FEATURED
-  // ==================================================
-
-  async function toggleFeatured(
-    product: Product
-  ) {
-    setError("");
-    setSuccess("");
-
-    const {
-      data,
-      error,
-    } = await supabase
-      .from("products")
-      .update({
-        featured:
-          !product.featured,
-      })
-      .eq("id", product.id)
-      .select()
-      .single();
-
-    if (error) {
-      setError(error.message);
-      return;
-    }
-
-    if (data) {
-      setProducts(
-        (current) =>
-          current.map(
-            (item) =>
-              item.id ===
-              product.id
-                ? {
-                    ...item,
-                    featured:
-                      data.featured,
-                  }
-                : item
-          )
-      );
-    }
-  }
-
-  // ==================================================
-  // UPDATE ORDER
-  // ==================================================
 
   async function updateOrder(
     orderId: string,
@@ -415,98 +435,63 @@ export default function AdminPage() {
       | "paymentStatus",
     value: string
   ) {
-    setError("");
-    setSuccess("");
-
-    try {
-      const response =
-        await fetch(
-          "/api/admin/orders",
-          {
-            method: "PATCH",
-            headers: {
-              "Content-Type":
-                "application/json",
-            },
-            body: JSON.stringify({
-              orderId,
-              [field]: value,
-            }),
-          }
-        );
-
-      const result =
-        await response.json();
-
-      if (!response.ok) {
-        throw new Error(
-          result.error ||
-            "Could not update order."
-        );
-      }
-
-      setOrders(
-        (current) =>
-          current.map(
-            (order) =>
-              order.id === orderId
-                ? {
-                    ...order,
-                    ...(field ===
-                    "orderStatus"
-                      ? {
-                          order_status:
-                            value,
-                        }
-                      : {
-                          payment_status:
-                            value,
-                        }),
-                  }
-                : order
-          )
+    const response =
+      await fetch(
+        "/api/admin/orders",
+        {
+          method: "PATCH",
+          headers: {
+            "Content-Type":
+              "application/json",
+          },
+          body: JSON.stringify({
+            orderId,
+            [field]: value,
+          }),
+        }
       );
 
-      setSuccess(
-        "Order updated successfully."
-      );
+    const result =
+      await response.json();
 
-    } catch (err) {
-      console.error(
-        "Order update error:",
-        err
-      );
-
+    if (!response.ok) {
       setError(
-        err instanceof Error
-          ? err.message
-          : "Could not update order."
+        result.error ||
+          "Could not update order."
       );
+      return;
     }
-  }
 
-  // ==================================================
-  // ADD CATEGORY
-  // ==================================================
+    setOrders(
+      (current) =>
+        current.map(
+          (order) =>
+            order.id === orderId
+              ? {
+                  ...order,
+                  ...(field ===
+                  "orderStatus"
+                    ? {
+                        order_status:
+                          value,
+                      }
+                    : {
+                        payment_status:
+                          value,
+                      }),
+                }
+              : order
+        )
+    );
+  }
 
   async function addCategory(
     event: React.FormEvent<HTMLFormElement>
   ) {
     event.preventDefault();
 
-    const name =
-      newCategoryName.trim();
-
-    if (!name) {
-      setError(
-        "Please enter a category name."
-      );
-      return;
-    }
-
     setSavingCategory(true);
     setError("");
-    setSuccess("");
 
     try {
       const response =
@@ -519,9 +504,10 @@ export default function AdminPage() {
                 "application/json",
             },
             body: JSON.stringify({
-              name,
+              name:
+                categoryName.trim(),
               section:
-                newCategorySection,
+                categorySection,
             }),
           }
         );
@@ -531,40 +517,30 @@ export default function AdminPage() {
 
       if (!response.ok) {
         throw new Error(
-          result.error ||
-            "Could not create category."
+          result.error
         );
       }
 
       setCategories(
         (current) =>
-          [
-            ...current,
-            result.category,
-          ].sort((a, b) =>
-            a.name.localeCompare(
-              b.name
+          [...current, result.category]
+            .sort((a, b) =>
+              a.name.localeCompare(
+                b.name
+              )
             )
-          )
       );
 
-      setNewCategoryName("");
-      setNewCategorySection(
-        "women"
+      setCategoryName("");
+      setShowCategoryModal(
+        false
       );
-
-      setShowCategoryModal(false);
 
       setSuccess(
-        `"${name}" category created successfully.`
+        "Category created."
       );
 
     } catch (err) {
-      console.error(
-        "Add category error:",
-        err
-      );
-
       setError(
         err instanceof Error
           ? err.message
@@ -574,10 +550,6 @@ export default function AdminPage() {
       setSavingCategory(false);
     }
   }
-
-  // ==================================================
-  // DELETE CATEGORY
-  // ==================================================
 
   async function deleteCategory(
     category: Category
@@ -589,59 +561,40 @@ export default function AdminPage() {
 
     if (!confirmed) return;
 
-    setError("");
-    setSuccess("");
-
-    try {
-      const response =
-        await fetch(
-          "/api/admin/categories",
-          {
-            method: "DELETE",
-            headers: {
-              "Content-Type":
-                "application/json",
-            },
-            body: JSON.stringify({
-              id: category.id,
-            }),
-          }
-        );
-
-      const result =
-        await response.json();
-
-      if (!response.ok) {
-        throw new Error(
-          result.error ||
-            "Could not delete category."
-        );
-      }
-
-      setCategories(
-        (current) =>
-          current.filter(
-            (item) =>
-              item.id !== category.id
-          )
+    const response =
+      await fetch(
+        "/api/admin/categories",
+        {
+          method: "DELETE",
+          headers: {
+            "Content-Type":
+              "application/json",
+          },
+          body: JSON.stringify({
+            id: category.id,
+          }),
+        }
       );
 
-      setSuccess(
-        `"${category.name}" deleted.`
-      );
+    const result =
+      await response.json();
 
-    } catch (err) {
-      console.error(
-        "Delete category error:",
-        err
-      );
-
+    if (!response.ok) {
       setError(
-        err instanceof Error
-          ? err.message
-          : "Could not delete category."
+        result.error ||
+          "Could not delete category."
       );
+      return;
     }
+
+    setCategories(
+      (current) =>
+        current.filter(
+          (item) =>
+            item.id !==
+            category.id
+        )
+    );
   }
 
   const tabs = [
@@ -653,27 +606,27 @@ export default function AdminPage() {
   ];
 
   return (
-    <main className="min-h-screen bg-[#f8f5ef] text-[#30291f]">
+    <main className="min-h-screen bg-[#fafaf8] text-[#181818]">
 
-      {/* HEADER */}
+      <header className="border-b border-[#e5e3de] bg-white">
 
-      <header className="border-b border-[#c9a96e]/30 bg-[#fffdf9]">
-
-        <div className="mx-auto flex h-24 max-w-7xl items-center justify-between px-6">
+        <div className="mx-auto flex h-20 max-w-7xl items-center justify-between px-6">
 
           <div>
-            <h1 className="font-[var(--font-cinzel)] text-2xl tracking-[0.25em] text-[#b28a45]">
-              AHN
-            </h1>
 
-            <p className="mt-1 font-[var(--font-cinzel)] text-[8px] tracking-[0.4em] text-[#75664e]">
+            <p className="text-sm font-semibold tracking-[0.15em]">
+              AHN COLLECTION
+            </p>
+
+            <p className="mt-1 text-[8px] tracking-[0.25em] text-[#777]">
               COLLECTION · ADMIN
             </p>
+
           </div>
 
           <Link
             href="/"
-            className="border border-[#c9a96e]/50 px-5 py-3 font-[var(--font-cinzel)] text-[10px] tracking-[0.15em] text-[#8c7044] hover:bg-[#b28a45] hover:text-white"
+            className="border border-[#181818] px-5 py-3 text-[10px] font-semibold tracking-[0.12em] hover:bg-[#181818] hover:text-white"
           >
             VIEW WEBSITE
           </Link>
@@ -682,21 +635,19 @@ export default function AdminPage() {
 
       </header>
 
-      {/* MAIN */}
-
       <div className="mx-auto grid max-w-7xl gap-8 px-6 py-10 md:grid-cols-[230px_1fr]">
 
         {/* SIDEBAR */}
 
-        <aside className="h-fit border border-[#c9a96e]/30 bg-[#fffdf9]">
+        <aside className="h-fit border border-[#e5e3de] bg-white">
 
-          <div className="border-b border-[#c9a96e]/20 p-6">
+          <div className="border-b border-[#e5e3de] p-6">
 
-            <p className="font-[var(--font-cinzel)] text-[9px] tracking-[0.3em] text-[#b28a45]">
+            <p className="text-[9px] font-semibold tracking-[0.25em] text-[#a88952]">
               OWNER PANEL
             </p>
 
-            <h2 className="mt-2 font-[var(--font-cormorant)] text-2xl">
+            <h2 className="mt-2 text-2xl font-medium">
               AHN Collection
             </h2>
 
@@ -706,6 +657,7 @@ export default function AdminPage() {
 
             {tabs.map(
               ([value, label]) => (
+
                 <button
                   key={value}
                   onClick={() =>
@@ -713,22 +665,22 @@ export default function AdminPage() {
                       value
                     )
                   }
-                  className={`w-full px-4 py-4 text-left font-[var(--font-cinzel)] text-[10px] tracking-[0.15em] transition ${
-                    activeTab === value
-                      ? "bg-[#b28a45] text-white"
-                      : "text-[#756c60] hover:bg-[#f4f0e8]"
+                  className={`w-full px-4 py-4 text-left text-[10px] font-semibold tracking-[0.12em] ${
+                    activeTab ===
+                    value
+                      ? "bg-[#181818] text-white"
+                      : "text-[#666] hover:bg-[#f5f5f3]"
                   }`}
                 >
                   {label}
                 </button>
+
               )
             )}
 
           </div>
 
         </aside>
-
-        {/* CONTENT */}
 
         <section>
 
@@ -739,86 +691,54 @@ export default function AdminPage() {
           )}
 
           {success && (
-            <div className="mb-5 border border-[#d9c49a] bg-[#fffaf0] px-5 py-4 text-sm text-[#80652f]">
+            <div className="mb-5 border border-[#e5e3de] bg-white px-5 py-4 text-sm">
               {success}
             </div>
           )}
 
-          {/* ==================================================
-              PRODUCTS
-          ================================================== */}
+          {/* PRODUCTS */}
 
           {activeTab ===
             "products" && (
+
             <div>
 
-              <div className="mb-8 flex flex-col gap-5 sm:flex-row sm:items-center sm:justify-between">
+              <div className="mb-8 flex items-end justify-between">
 
                 <div>
 
-                  <p className="font-[var(--font-cinzel)] text-[9px] tracking-[0.3em] text-[#b28a45]">
+                  <p className="ahn-label text-[#a88952]">
                     INVENTORY
                   </p>
 
-                  <h2 className="mt-2 font-[var(--font-cormorant)] text-5xl">
+                  <h2 className="mt-2 text-5xl font-medium">
                     Products
                   </h2>
 
-                  <p className="mt-2 text-sm text-[#81786a]">
+                  <p className="mt-2 text-sm text-[#777]">
                     {products.length}{" "}
                     product
                     {products.length ===
                     1
                       ? ""
-                      : "s"} in your collection
+                      : "s"}
                   </p>
 
                 </div>
 
-                <div className="flex gap-3">
-
-                  <button
-                    onClick={
-                      loadProducts
-                    }
-                    className="border border-[#c9a96e]/50 px-5 py-4 text-[10px] tracking-[0.15em] text-[#8c7044] hover:bg-[#f1eadc]"
-                  >
-                    REFRESH
-                  </button>
-
-                  <Link
-                    href="/admin/products/new"
-                    className="bg-[#b28a45] px-6 py-4 text-[10px] tracking-[0.15em] text-white hover:bg-[#967238]"
-                  >
-                    + ADD PRODUCT
-                  </Link>
-
-                </div>
+                <Link
+                  href="/admin/products/new"
+                  className="bg-[#181818] px-6 py-4 text-[10px] font-semibold tracking-[0.14em] text-white"
+                >
+                  + ADD PRODUCT
+                </Link>
 
               </div>
 
               {loadingProducts ? (
 
-                <div className="border border-[#c9a96e]/30 bg-[#fffdf9] p-12 text-center">
-                  Loading collection...
-                </div>
-
-              ) : products.length ===
-                0 ? (
-
-                <div className="border border-[#c9a96e]/30 bg-[#fffdf9] p-12 text-center">
-
-                  <p className="font-[var(--font-cormorant)] text-3xl">
-                    Your collection is empty.
-                  </p>
-
-                  <Link
-                    href="/admin/products/new"
-                    className="mt-7 inline-block bg-[#b28a45] px-6 py-4 text-[10px] tracking-[0.15em] text-white"
-                  >
-                    + ADD FIRST PRODUCT
-                  </Link>
-
+                <div className="border border-[#e5e3de] bg-white p-12 text-center">
+                  Loading products...
                 </div>
 
               ) : (
@@ -828,70 +748,112 @@ export default function AdminPage() {
                   {products.map(
                     (product) => {
 
-                      const imageUrl =
+                      const image =
                         product.images?.[0] ||
                         "";
 
+                      const discount =
+                        getDiscount(
+                          product.price,
+                          product.original_price
+                        );
+
                       return (
+
                         <div
-                          key={product.id}
-                          className="border border-[#c9a96e]/30 bg-[#fffdf9] p-6"
+                          key={
+                            product.id
+                          }
+                          className="border border-[#e5e3de] bg-white p-6"
                         >
 
                           <div className="flex flex-col gap-6 lg:flex-row">
 
-                            <div className="h-48 w-full shrink-0 overflow-hidden bg-[#f2eee6] lg:w-40">
+                            <div className="h-48 w-full shrink-0 overflow-hidden bg-[#f5f5f3] lg:w-40">
 
-                              {imageUrl ? (
+                              {image ? (
+
                                 <img
-                                  src={imageUrl}
+                                  src={
+                                    image
+                                  }
                                   alt={
                                     product.name
                                   }
                                   className="h-full w-full object-cover"
                                 />
+
                               ) : (
-                                <div className="flex h-full items-center justify-center text-xs text-[#9a8e7c]">
+
+                                <div className="flex h-full items-center justify-center text-xs text-[#999]">
                                   NO IMAGE
                                 </div>
+
                               )}
 
                             </div>
 
-                            <div className="min-w-0 flex-1">
+                            <div className="flex-1">
 
-                              <div className="flex flex-col gap-3 sm:flex-row sm:items-start sm:justify-between">
+                              <div className="flex flex-wrap items-start justify-between gap-4">
 
                                 <div>
 
-                                  <h3 className="font-[var(--font-cormorant)] text-3xl">
-                                    {product.name}
+                                  <h3 className="text-3xl font-medium">
+                                    {
+                                      product.name
+                                    }
                                   </h3>
 
-                                  <p className="mt-1 text-[9px] tracking-widest text-[#8c7044]">
-                                    {getCategoryName(
-                                      product.category_id
-                                    )}{" "}
+                                  <p className="mt-1 text-[9px] font-semibold tracking-wider text-[#a88952]">
+                                    {
+                                      getCategoryName(
+                                        product.category_id
+                                      )
+                                    }{" "}
                                     ·{" "}
-                                    {(
-                                      product.section ||
-                                      "COLLECTION"
-                                    ).toUpperCase()}
+                                    {
+                                      (
+                                        product.section ||
+                                        "COLLECTION"
+                                      ).toUpperCase()
+                                    }
                                   </p>
 
                                 </div>
 
-                                <p className="font-[var(--font-cormorant)] text-2xl text-[#b28a45]">
-                                  Rs.{" "}
-                                  {formatPrice(
-                                    product.price
+                                <div className="flex flex-wrap items-baseline gap-3">
+
+                                  <span className="text-2xl text-[#ff4f1f]">
+                                    Rs.{" "}
+                                    {formatPrice(
+                                      product.price
+                                    )}
+                                  </span>
+
+                                  {discount >
+                                    0 && (
+                                    <>
+                                      <span className="text-sm text-[#999] line-through">
+                                        Rs.{" "}
+                                        {formatPrice(
+                                          product.original_price ||
+                                            0
+                                        )}
+                                      </span>
+
+                                      <span className="text-sm text-[#666]">
+                                        -{discount}%
+                                      </span>
+                                    </>
                                   )}
-                                </p>
+
+                                </div>
 
                               </div>
 
                               {product.description && (
-                                <p className="mt-4 line-clamp-2 max-w-2xl text-sm text-[#81786a]">
+                                <p className="mt-4 line-clamp-2 text-sm leading-6 text-[#777]">
                                   {
                                     product.description
                                   }
@@ -899,13 +861,6 @@ export default function AdminPage() {
                               )}
 
                               <div className="mt-5 flex flex-wrap gap-2">
-
-                                <span className="border border-[#d9cdb9] px-3 py-2 text-[10px]">
-                                  STOCK:{" "}
-                                  {
-                                    product.stock
-                                  }
-                                </span>
 
                                 <span
                                   className={`border px-3 py-2 text-[10px] ${
@@ -915,13 +870,13 @@ export default function AdminPage() {
                                   }`}
                                 >
                                   {product.active
-                                    ? "ACTIVE"
+                                    ? "PUBLISHED"
                                     : "HIDDEN"}
                                 </span>
 
                                 {product.featured && (
-                                  <span className="border border-[#c9a96e] px-3 py-2 text-[10px] text-[#8c7044]">
-                                    ★ FEATURED
+                                  <span className="border border-[#d9cdb9] px-3 py-2 text-[10px]">
+                                    FEATURED
                                   </span>
                                 )}
 
@@ -937,7 +892,7 @@ export default function AdminPage() {
 
                                 <Link
                                   href={`/admin/products/${product.id}/edit`}
-                                  className="border border-[#b28a45] px-4 py-3 text-[9px] tracking-[0.12em] text-[#8c7044] hover:bg-[#b28a45] hover:text-white"
+                                  className="border border-[#181818] px-4 py-3 text-[9px] font-semibold tracking-[0.12em]"
                                 >
                                   EDIT PRODUCT
                                 </Link>
@@ -945,7 +900,7 @@ export default function AdminPage() {
                                 <Link
                                   href={`/product/${product.id}`}
                                   target="_blank"
-                                  className="border border-[#c9a96e]/50 px-4 py-3 text-[9px] tracking-[0.12em] text-[#8c7044] hover:bg-[#f1eadc]"
+                                  className="border border-[#d9d5ce] px-4 py-3 text-[9px] font-semibold tracking-[0.12em]"
                                 >
                                   VIEW PRODUCT
                                 </Link>
@@ -956,7 +911,7 @@ export default function AdminPage() {
                                       product
                                     )
                                   }
-                                  className="border border-[#c9a96e]/50 px-4 py-3 text-[9px] tracking-[0.12em] text-[#8c7044]"
+                                  className="border border-[#d9d5ce] px-4 py-3 text-[9px] font-semibold tracking-[0.12em]"
                                 >
                                   {product.active
                                     ? "HIDE PRODUCT"
@@ -969,7 +924,7 @@ export default function AdminPage() {
                                       product
                                     )
                                   }
-                                  className="border border-[#c9a96e]/50 px-4 py-3 text-[9px] tracking-[0.12em] text-[#8c7044]"
+                                  className="border border-[#d9d5ce] px-4 py-3 text-[9px] font-semibold tracking-[0.12em]"
                                 >
                                   {product.featured
                                     ? "REMOVE FEATURED"
@@ -982,7 +937,7 @@ export default function AdminPage() {
                                       product
                                     )
                                   }
-                                  className="border border-red-200 px-4 py-3 text-[9px] tracking-[0.12em] text-red-700"
+                                  className="border border-red-200 px-4 py-3 text-[9px] font-semibold tracking-[0.12em] text-red-700"
                                 >
                                   DELETE
                                 </button>
@@ -994,6 +949,7 @@ export default function AdminPage() {
                           </div>
 
                         </div>
+
                       );
                     }
                   )}
@@ -1003,107 +959,98 @@ export default function AdminPage() {
               )}
 
             </div>
+
           )}
 
-          {/* ==================================================
-              REELS
-          ================================================== */}
+          {/* REELS */}
 
           {activeTab ===
             "reels" && (
+
             <div>
 
-              <p className="text-[9px] tracking-[0.3em] text-[#b28a45]">
+              <p className="ahn-label text-[#a88952]">
                 CONTENT
               </p>
 
-              <h2 className="mt-2 font-[var(--font-cormorant)] text-5xl">
+              <h2 className="mt-2 text-5xl font-medium">
                 Reels
               </h2>
 
               <div className="mt-8 space-y-5">
 
-                {products.filter(
-                  (product) =>
-                    Boolean(
-                      product.reel_url
-                    )
-                ).map(
-                  (product) => (
-                    <div
-                      key={product.id}
-                      className="border border-[#c9a96e]/30 bg-[#fffdf9] p-6"
-                    >
+                {products
+                  .filter(
+                    (product) =>
+                      Boolean(
+                        product.reel_url
+                      )
+                  )
+                  .map(
+                    (product) => (
 
-                      <div className="flex items-center justify-between">
+                      <div
+                        key={
+                          product.id
+                        }
+                        className="border border-[#e5e3de] bg-white p-6"
+                      >
 
-                        <h3 className="font-[var(--font-cormorant)] text-2xl">
-                          {
-                            product.name
+                        <div className="flex items-center justify-between">
+
+                          <h3 className="text-2xl font-medium">
+                            {
+                              product.name
+                            }
+                          </h3>
+
+                          <Link
+                            href={`/admin/products/${product.id}/edit`}
+                            className="border border-[#181818] px-4 py-3 text-[9px] font-semibold"
+                          >
+                            EDIT
+                          </Link>
+
+                        </div>
+
+                        <video
+                          src={
+                            product.reel_url ||
+                            ""
                           }
-                        </h3>
-
-                        <Link
-                          href={`/admin/products/${product.id}/edit`}
-                          className="border border-[#b28a45] px-4 py-3 text-[9px] text-[#8c7044] hover:bg-[#b28a45] hover:text-white"
-                        >
-                          EDIT
-                        </Link>
+                          controls
+                          className="mt-5 max-h-[600px] w-full object-contain"
+                        />
 
                       </div>
 
-                      <video
-                        src={
-                          product.reel_url ||
-                          ""
-                        }
-                        controls
-                        className="mt-5 max-h-[600px] w-full object-contain"
-                      />
-
-                    </div>
-                  )
-                )}
-
-                {products.filter(
-                  (product) =>
-                    Boolean(
-                      product.reel_url
                     )
-                ).length === 0 && (
-                  <div className="border border-[#c9a96e]/30 bg-[#fffdf9] p-8">
-                    No reels yet.
-                  </div>
-                )}
+                  )}
 
               </div>
 
             </div>
+
           )}
 
-          {/* ==================================================
-              CATEGORIES
-          ================================================== */}
+          {/* CATEGORIES */}
 
           {activeTab ===
             "categories" && (
+
             <div>
 
-              <div className="mb-8 flex flex-col gap-5 sm:flex-row sm:items-center sm:justify-between">
+              <div className="mb-8 flex items-end justify-between">
 
                 <div>
 
-                  <p className="text-[9px] tracking-[0.3em] text-[#b28a45]">
+                  <p className="ahn-label text-[#a88952]">
                     ORGANIZATION
                   </p>
 
-                  <h2 className="mt-2 font-[var(--font-cormorant)] text-5xl">
+                  <h2 className="mt-2 text-5xl font-medium">
                     Categories
                   </h2>
-
-                  <p className="mt-2 text-sm text-[#81786a]">
-                    Manage categories for Women and Men.
-                  </p>
 
                 </div>
 
@@ -1113,7 +1060,7 @@ export default function AdminPage() {
                       true
                     )
                   }
-                  className="bg-[#b28a45] px-6 py-4 text-[10px] tracking-[0.15em] text-white"
+                  className="bg-[#181818] px-6 py-4 text-[10px] font-semibold tracking-[0.14em] text-white"
                 >
                   + ADD CATEGORY
                 </button>
@@ -1122,71 +1069,76 @@ export default function AdminPage() {
 
               {loadingCategories ? (
 
-                <div className="border border-[#c9a96e]/30 bg-[#fffdf9] p-8">
-                  Loading categories...
+                <div className="border border-[#e5e3de] bg-white p-8">
+                  Loading...
                 </div>
 
               ) : (
 
-                <div className="grid gap-8 md:grid-cols-2">
+                <div className="grid gap-6 md:grid-cols-2">
 
                   {[
                     "women",
                     "men",
                   ].map(
-                    (section) => {
+                    (section) => (
 
-                      const sectionCategories =
-                        categories.filter(
-                          (category) =>
-                            category.section.toLowerCase() ===
-                            section
-                        );
+                      <div
+                        key={section}
+                        className="border border-[#e5e3de] bg-white p-6"
+                      >
 
-                      return (
-                        <div
-                          key={section}
-                          className="border border-[#c9a96e]/30 bg-[#fffdf9] p-6"
-                        >
+                        <p className="ahn-label text-[#a88952]">
+                          {section.toUpperCase()}
+                        </p>
 
-                          <p className="text-[9px] tracking-[0.3em] text-[#b28a45]">
-                            {section.toUpperCase()}
-                          </p>
+                        <h3 className="mt-2 text-2xl font-medium">
+                          {section ===
+                          "women"
+                            ? "Women's Categories"
+                            : "Men's Categories"}
+                        </h3>
 
-                          <h3 className="mt-2 font-[var(--font-cormorant)] text-3xl">
-                            {section ===
-                            "women"
-                              ? "Women's Categories"
-                              : "Men's Categories"}
-                          </h3>
+                        <div className="mt-5 space-y-3">
 
-                          <div className="mt-5 space-y-3">
-
-                            {sectionCategories.map(
-                              (category) => {
+                          {categories
+                            .filter(
+                              (category) =>
+                                category.section.toLowerCase() ===
+                                section
+                            )
+                            .map(
+                              (
+                                category
+                              ) => {
 
                                 const count =
                                   products.filter(
-                                    (product) =>
+                                    (
+                                      product
+                                    ) =>
                                       product.category_id ===
                                       category.id
                                   ).length;
 
                                 return (
+
                                   <div
-                                    key={category.id}
-                                    className="flex items-center justify-between border border-[#eee5d8] p-4"
+                                    key={
+                                      category.id
+                                    }
+                                    className="flex items-center justify-between border border-[#e5e3de] p-4"
                                   >
 
                                     <div>
 
-                                      <p className="font-[var(--font-cormorant)] text-xl">
+                                      <p className="font-medium">
                                         {
                                           category.name
                                         }
                                       </p>
 
-                                      <p className="mt-1 text-xs text-[#81786a]">
+                                      <p className="mt-1 text-xs text-[#777]">
                                         {
                                           count
                                         }{" "}
@@ -1205,21 +1157,22 @@ export default function AdminPage() {
                                           category
                                         )
                                       }
-                                      className="text-xs text-red-700 hover:underline"
+                                      className="text-xs text-red-700"
                                     >
                                       DELETE
                                     </button>
 
                                   </div>
+
                                 );
                               }
                             )}
 
-                          </div>
-
                         </div>
-                      );
-                    }
+
+                      </div>
+
+                    )
                   )}
 
                 </div>
@@ -1227,36 +1180,27 @@ export default function AdminPage() {
               )}
 
             </div>
+
           )}
 
-          {/* ==================================================
-              ORDERS
-          ================================================== */}
+          {/* ORDERS */}
 
           {activeTab ===
             "orders" && (
+
             <div>
 
-              <div className="mb-8 flex flex-col gap-5 sm:flex-row sm:items-center sm:justify-between">
+              <div className="mb-8 flex items-end justify-between">
 
                 <div>
 
-                  <p className="text-[9px] tracking-[0.3em] text-[#b28a45]">
+                  <p className="ahn-label text-[#a88952]">
                     SALES
                   </p>
 
-                  <h2 className="mt-2 font-[var(--font-cormorant)] text-5xl">
+                  <h2 className="mt-2 text-5xl font-medium">
                     Orders
                   </h2>
-
-                  <p className="mt-2 text-sm text-[#81786a]">
-                    {orders.length}{" "}
-                    order
-                    {orders.length ===
-                    1
-                      ? ""
-                      : "s"} received
-                  </p>
 
                 </div>
 
@@ -1264,32 +1208,26 @@ export default function AdminPage() {
                   onClick={
                     loadOrders
                   }
-                  className="border border-[#c9a96e]/50 px-5 py-4 text-[10px] tracking-[0.15em] text-[#8c7044]"
+                  className="border border-[#181818] px-5 py-4 text-[10px] font-semibold"
                 >
-                  REFRESH ORDERS
+                  REFRESH
                 </button>
 
               </div>
 
               {loadingOrders ? (
 
-                <div className="border border-[#c9a96e]/30 bg-[#fffdf9] p-12 text-center">
+                <div className="border border-[#e5e3de] bg-white p-12 text-center">
                   Loading orders...
                 </div>
 
               ) : orders.length ===
                 0 ? (
 
-                <div className="border border-[#c9a96e]/30 bg-[#fffdf9] p-12 text-center">
-
-                  <p className="font-[var(--font-cormorant)] text-3xl">
+                <div className="border border-[#e5e3de] bg-white p-12 text-center">
+                  <p className="text-2xl">
                     No orders yet.
                   </p>
-
-                  <p className="mt-3 text-sm text-[#81786a]">
-                    Customer orders will appear here after checkout.
-                  </p>
-
                 </div>
 
               ) : (
@@ -1300,38 +1238,43 @@ export default function AdminPage() {
                     (order) => (
 
                       <div
-                        key={order.id}
-                        className="border border-[#c9a96e]/30 bg-[#fffdf9] p-7"
+                        key={
+                          order.id
+                        }
+                        className="border border-[#e5e3de] bg-white p-7"
                       >
 
-                        <div className="flex flex-col gap-4 border-b border-[#c9a96e]/20 pb-6 lg:flex-row lg:items-start lg:justify-between">
+                        <div className="flex flex-wrap items-start justify-between gap-5 border-b border-[#e5e3de] pb-6">
 
                           <div>
 
-                            <p className="text-[9px] tracking-[0.25em] text-[#b28a45]">
+                            <p className="ahn-label text-[#a88952]">
                               ORDER #
-                              {order.id
-                                .slice(
+                              {
+                                order.id.slice(
                                   0,
                                   8
                                 )
-                                .toUpperCase()}
+                              }
                             </p>
 
-                            <h3 className="mt-2 font-[var(--font-cormorant)] text-3xl">
-                              {order.product_name ||
-                                "Unknown Product"}
+                            <h3 className="mt-2 text-2xl font-medium">
+                              {
+                                order.product_name
+                              }
                             </h3>
 
-                            <p className="mt-2 text-xs text-[#81786a]">
-                              {formatDate(
-                                order.created_at
-                              )}
+                            <p className="mt-2 text-xs text-[#777]">
+                              {
+                                formatDate(
+                                  order.created_at
+                                )
+                              }
                             </p>
 
                           </div>
 
-                          <p className="font-[var(--font-cormorant)] text-3xl text-[#b28a45]">
+                          <p className="text-2xl text-[#ff4f1f]">
                             Rs.{" "}
                             {formatPrice(
                               order.amount
@@ -1344,7 +1287,7 @@ export default function AdminPage() {
 
                           <div>
 
-                            <p className="text-[9px] tracking-[0.25em] text-[#b28a45]">
+                            <p className="ahn-label text-[#a88952]">
                               CUSTOMER
                             </p>
 
@@ -1390,7 +1333,7 @@ export default function AdminPage() {
                                 </p>
                               )}
 
-                              <p className="leading-6">
+                              <p>
                                 <strong>
                                   Address:
                                 </strong>{" "}
@@ -1405,7 +1348,7 @@ export default function AdminPage() {
 
                           <div>
 
-                            <p className="text-[9px] tracking-[0.25em] text-[#b28a45]">
+                            <p className="ahn-label text-[#a88952]">
                               ORDER DETAILS
                             </p>
 
@@ -1448,113 +1391,108 @@ export default function AdminPage() {
 
                         </div>
 
-                        <div className="border-t border-[#c9a96e]/20 pt-6">
+                        <div className="grid gap-5 border-t border-[#e5e3de] pt-6 md:grid-cols-2">
 
-                          <div className="grid gap-5 md:grid-cols-2">
+                          <div>
 
-                            <div>
+                            <label className="field-label">
+                              ORDER STATUS
+                            </label>
 
-                              <label className="mb-2 block text-[9px] tracking-[0.18em] text-[#756c60]">
-                                ORDER STATUS
-                              </label>
+                            <select
+                              value={
+                                order.order_status ||
+                                "pending"
+                              }
+                              onChange={(
+                                event
+                              ) =>
+                                updateOrder(
+                                  order.id,
+                                  "orderStatus",
+                                  event.target
+                                    .value
+                                )
+                              }
+                              className="field-input"
+                            >
 
-                              <select
-                                value={
-                                  order.order_status ||
-                                  "pending"
-                                }
-                                onChange={(
-                                  event
-                                ) =>
-                                  updateOrder(
-                                    order.id,
-                                    "orderStatus",
-                                    event
-                                      .target
-                                      .value
-                                  )
-                                }
-                                className="w-full border border-[#c9a96e]/40 bg-[#fcfaf6] px-4 py-3 text-sm"
-                              >
+                              <option value="pending">
+                                Pending
+                              </option>
 
-                                <option value="pending">
-                                  Pending
-                                </option>
+                              <option value="confirmed">
+                                Confirmed
+                              </option>
 
-                                <option value="confirmed">
-                                  Confirmed
-                                </option>
+                              <option value="processing">
+                                Processing
+                              </option>
 
-                                <option value="processing">
-                                  Processing
-                                </option>
+                              <option value="shipped">
+                                Shipped
+                              </option>
 
-                                <option value="shipped">
-                                  Shipped
-                                </option>
+                              <option value="delivered">
+                                Delivered
+                              </option>
 
-                                <option value="delivered">
-                                  Delivered
-                                </option>
+                              <option value="cancelled">
+                                Cancelled
+                              </option>
 
-                                <option value="cancelled">
-                                  Cancelled
-                                </option>
+                            </select>
 
-                              </select>
+                          </div>
 
-                            </div>
+                          <div>
 
-                            <div>
+                            <label className="field-label">
+                              PAYMENT STATUS
+                            </label>
 
-                              <label className="mb-2 block text-[9px] tracking-[0.18em] text-[#756c60]">
-                                PAYMENT STATUS
-                              </label>
+                            <select
+                              value={
+                                order.payment_status ||
+                                "pending"
+                              }
+                              onChange={(
+                                event
+                              ) =>
+                                updateOrder(
+                                  order.id,
+                                  "paymentStatus",
+                                  event.target
+                                    .value
+                                )
+                              }
+                              className="field-input"
+                            >
 
-                              <select
-                                value={
-                                  order.payment_status ||
-                                  "pending"
-                                }
-                                onChange={(
-                                  event
-                                ) =>
-                                  updateOrder(
-                                    order.id,
-                                    "paymentStatus",
-                                    event
-                                      .target
-                                      .value
-                                  )
-                                }
-                                className="w-full border border-[#c9a96e]/40 bg-[#fcfaf6] px-4 py-3 text-sm"
-                              >
+                              <option value="pending">
+                                Pending
+                              </option>
 
-                                <option value="pending">
-                                  Pending
-                                </option>
+                              <option value="paid">
+                                Paid
+                              </option>
 
-                                <option value="paid">
-                                  Paid
-                                </option>
+                              <option value="failed">
+                                Failed
+                              </option>
 
-                                <option value="failed">
-                                  Failed
-                                </option>
+                              <option value="refunded">
+                                Refunded
+                              </option>
 
-                                <option value="refunded">
-                                  Refunded
-                                </option>
-
-                              </select>
-
-                            </div>
+                            </select>
 
                           </div>
 
                         </div>
 
                       </div>
+
                     )
                   )}
 
@@ -1563,75 +1501,74 @@ export default function AdminPage() {
               )}
 
             </div>
+
           )}
 
-          {/* ==================================================
-              REVIEWS
-          ================================================== */}
+          {/* REVIEWS */}
 
           {activeTab ===
             "reviews" && (
+
             <div>
 
-              <p className="text-[9px] tracking-[0.3em] text-[#b28a45]">
+              <p className="ahn-label text-[#a88952]">
                 CUSTOMER FEEDBACK
               </p>
 
-              <h2 className="mt-2 font-[var(--font-cormorant)] text-5xl">
+              <h2 className="mt-2 text-5xl font-medium">
                 Reviews
               </h2>
 
-              <div className="mt-8 border border-[#c9a96e]/30 bg-[#fffdf9] p-8">
+              <div className="mt-8 border border-[#e5e3de] bg-white p-8">
 
-                <p className="font-[var(--font-cormorant)] text-2xl">
+                <p className="text-2xl">
                   No reviews yet.
                 </p>
 
-                <p className="mt-2 text-sm text-[#81786a]">
-                  Customer reviews and complaints will appear here.
+                <p className="mt-2 text-sm text-[#777]">
+                  Customer reviews and complaints
+                  will appear here.
                 </p>
 
               </div>
 
             </div>
+
           )}
 
         </section>
 
       </div>
 
-      {/* ==================================================
-          CATEGORY MODAL
-      ================================================== */}
+      {/* CATEGORY MODAL */}
 
       {showCategoryModal && (
 
-        <div className="fixed inset-0 z-[100] flex items-center justify-center bg-black/50 px-6">
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40 px-6">
 
-          <div className="w-full max-w-md border border-[#c9a96e]/40 bg-[#fffdf9] p-8 shadow-2xl">
+          <div className="w-full max-w-md border border-[#e5e3de] bg-white p-8">
 
             <div className="flex items-start justify-between">
 
               <div>
 
-                <p className="text-[9px] tracking-[0.3em] text-[#b28a45]">
+                <p className="ahn-label text-[#a88952]">
                   AHN COLLECTION
                 </p>
 
-                <h2 className="mt-2 font-[var(--font-cormorant)] text-4xl">
+                <h2 className="mt-2 text-3xl font-medium">
                   Add Category
                 </h2>
 
               </div>
 
               <button
-                type="button"
                 onClick={() =>
                   setShowCategoryModal(
                     false
                   )
                 }
-                className="text-2xl text-[#81786a]"
+                className="text-2xl text-[#777]"
               >
                 ×
               </button>
@@ -1642,47 +1579,46 @@ export default function AdminPage() {
               onSubmit={
                 addCategory
               }
-              className="mt-8 space-y-6"
+              className="mt-8 space-y-5"
             >
 
               <div>
 
-                <label className="mb-2 block text-[9px] tracking-[0.18em] text-[#756c60]">
+                <label className="field-label">
                   CATEGORY NAME
                 </label>
 
                 <input
                   required
                   value={
-                    newCategoryName
+                    categoryName
                   }
                   onChange={(event) =>
-                    setNewCategoryName(
+                    setCategoryName(
                       event.target.value
                     )
                   }
-                  placeholder="e.g. Bridal Couture"
-                  className="w-full border border-[#d9cdb9] bg-[#fcfaf6] px-4 py-4 text-sm"
+                  className="field-input"
                 />
 
               </div>
 
               <div>
 
-                <label className="mb-2 block text-[9px] tracking-[0.18em] text-[#756c60]">
+                <label className="field-label">
                   COLLECTION
                 </label>
 
                 <select
                   value={
-                    newCategorySection
+                    categorySection
                   }
                   onChange={(event) =>
-                    setNewCategorySection(
+                    setCategorySection(
                       event.target.value
                     )
                   }
-                  className="w-full border border-[#d9cdb9] bg-[#fcfaf6] px-4 py-4 text-sm"
+                  className="field-input"
                 >
 
                   <option value="women">
@@ -1706,7 +1642,7 @@ export default function AdminPage() {
                       false
                     )
                   }
-                  className="flex-1 border border-[#c9a96e]/50 py-4 text-[10px] tracking-[0.15em] text-[#8c7044]"
+                  className="flex-1 border border-[#181818] py-4 text-xs font-semibold"
                 >
                   CANCEL
                 </button>
@@ -1716,7 +1652,7 @@ export default function AdminPage() {
                   disabled={
                     savingCategory
                   }
-                  className="flex-1 bg-[#b28a45] py-4 text-[10px] tracking-[0.15em] text-white disabled:opacity-60"
+                  className="flex-1 bg-[#181818] py-4 text-xs font-semibold text-white"
                 >
                   {savingCategory
                     ? "ADDING..."
@@ -1732,6 +1668,26 @@ export default function AdminPage() {
         </div>
 
       )}
+
+      <style jsx global>{`
+        .field-label {
+          display: block;
+          margin-bottom: 8px;
+          font-size: 10px;
+          font-weight: 600;
+          letter-spacing: 0.15em;
+          color: #666;
+        }
+
+        .field-input {
+          width: 100%;
+          border: 1px solid #dcd9d2;
+          background: white;
+          padding: 12px 14px;
+          outline: none;
+          font-size: 14px;
+        }
+      `}</style>
 
     </main>
   );
