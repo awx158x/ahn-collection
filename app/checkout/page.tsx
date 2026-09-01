@@ -14,16 +14,16 @@ const JAZZCASH_NUMBER =
   "0300 8661317";
 
 const BANK_NAME =
-  "SIGMA KNOWN AS AHMAD";
+  "N/A";
 
 const BANK_ACCOUNT_TITLE =
-  "AHMAD SIGMA KA BANK ACCOUNT";
+  "N/A";
 
 const BANK_ACCOUNT_NUMBER =
-  "6942069420";
+  "N/A";
 
 const BANK_IBAN =
-  "69696969696696969669";
+  "N/A";
 
 // ==================================================
 
